@@ -100,6 +100,8 @@ def compute_inertias(x):
     I1 = l_1**2 * (x[4, 0] / 3 + x[5, 0])
     I2 = l_2**2 * x[5, 0] / 12
     
+    # I1+= I2
+    
     return I1, I2
 
 def compute_accelerations(x, u = np.zeros((2, 1))):
@@ -567,7 +569,7 @@ def H_jac (x):
     H [1, 4]+= l_2 / 2 * (f1 - f2)
     H [1, 4]*= - l_1 / (I1 * x5)
     
-    H [1, 5] = - c1 / ((x5 + 3 * x6)**2) * (s1 * g * 3 / 2 * x5 + 9 * sin(x2) * (f1 + f2) + 9 / 2 * l_2 / l_1 * (f1 - f2))
+    H [1, 5] = l_1**2 / I1 * g * s1 * c1
     
     
     H [2, 0] = l_1 * sin(2 * x1) * g * (x5 / 2 + x6)
@@ -580,22 +582,27 @@ def H_jac (x):
     
     H [2, 2] = - 2 * l_1 * x3 * c1
     
-    H [2, 4] = - s1 / ((x5 + 3 * x6)**2) * (s1 * g * 3 / 2 * x6 - 3 * sin(x2) * (f1 + f2) - 3 / 2 * l_2 / l_1 * (f1 - f2))
+    H [2, 4] = x6 * g * l_1 * s1
+    H [2, 4]+= l_1 * sin(x2) * (f1 + f2)
+    H [2, 4]+= l_2 / 2 * (f1 - f2)
+    H [2, 4]*= l_1 / (x5 * I1) * s1
     
-    H [2, 5] = + s1 / ((x5 + 3 * x6)**2) * (s1 * g * 3 / 2 * x5 + 9 * sin(x2) * (f1 + f2) + 9 / 2 * l_2 / l_1 * (f1 - f2))
+    H [2, 5] = s1**2 * g * l_1**2 / I1
     
     
     H [3, 2] = 1
     H [3, 3] = 1
     
     
-    H [4, 0] = l_2 / 2 * (x3 + x4)**2 * sin(x1 + x2) - l_2**2 / (4 * I2) * cos(x1 + x2) * (f1 - f2)
+    H [4, 0] = (x3 + x4)**2 * sin(x1 + x2)
+    H [4, 0]-= l_2 / (2 * I2) * cos(x1 + x2) * (f1 - f2)
+    H [4, 0]*= l_2 / 2
     
     H [4, 1] = H [4, 0]
     
-    # H [4, 0]+= H [1, 0]
+    H [4, 0]+= H [1, 0]
     
-    # H [4, 1]+= H [1, 1]
+    H [4, 1]+= H [1, 1]
     
     H [4, 2] = - l_2 * (x3 + x4) * cos(x1 + x2)
     
@@ -967,7 +974,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                     z = compute_z(data, ekf_theta.x)
                     h_est = h_x(ekf_theta.x)
                     
-                    ekf_theta.update(z = z, HJacobian = H_jac, Hx = h_x)
+                    # ekf_theta.update(z = z, HJacobian = H_jac, Hx = h_x)
                 
                 
                 
