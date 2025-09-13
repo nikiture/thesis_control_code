@@ -1,0 +1,49 @@
+<mujoco>
+    <compiler angle = "degree"/>
+    <option>
+        <flag gravity = "enable" contact = "disable"/>
+    
+    </option>
+    <asset>
+        <texture name="grid" type="2d" builtin="checker" rgb1=".1 .2 .3"
+            rgb2=".2 .3 .4" width="300" height="300" mark="none"/>
+        <material name="grid" texture="grid" texrepeat="1 1"
+            texuniform="true" reflectance=".2"/>
+    </asset>
+    
+    <worldbody>
+        <!-- <geom name="floor" type="plane" pos="0 0 -.05" size="2 2 .1" material="grid"/> -->
+        
+        <!-- <body name = "3Dpendulum" euler = "0 .5 0"> -->
+        <body name = "pendulum" gravcomp = "0">-->
+            <!-- <joint name = "pend_joint" type = "hinge" axis = "0 -1 0" pos = "0 0 0"/> -->
+            <joint name = "pend_joint" type = "hinge" axis = "0 1 0" pos = "0 0 0"/>
+            <geom name = "pend_stick" type = "box" fromto = "0 0 0 0 0 .5" size = ".003 .003" mass = "10"/>
+            <body name = "end_mass" pos = "0 0 .5" gravcomp = "0">
+            <!-- <geom name = "pend_stick" type = "box" fromto = "0 0 0 0 0 -.5" size = ".01 .01" mass = "1"/>
+            <body name = "end_mass" pos = "0 0 -.5" gravcomp = "0"> -->
+                <!-- <joint name = "prop_orientation_joint" type = "hinge" axis = "0 0 1"/>-->
+                <!--<geom name = "propeller_body" type = "cylinder" size = ".01 .05" zaxis = "1 0 0"/> -->
+                <geom name = "propeller_body" type = "sphere" size = ".02" mass = "10"/>
+                <!-- <site name = "IMU_loc" axisangle = "1 0 0 90"/>  -->
+                <site name = "IMU_loc"/> 
+            </body>
+        </body>
+
+
+    </worldbody>
+
+    <!-- <actuator>
+        <motor name = "propeller" site = "pend_end" gear = "0 0 0 0 0 1"/>
+    </actuator> -->
+
+    <sensor>
+        <!-- <accelerometer name = "IMU_acc" site = "IMU_loc" noise = ".01"/>
+        <gyro name = "IMU_gyro" site = "IMU_loc" noise = ".01"/> -->
+        <accelerometer name = "IMU_acc" site = "IMU_loc" noise = "2"/>
+        <gyro name = "IMU_gyro" site = "IMU_loc" noise = ".05"/>
+        <!-- <accelerometer name = "IMU_acc" site = "IMU_loc" noise = "0"/>
+        <gyro name = "IMU_gyro" site = "IMU_loc" noise = "0"/> -->
+    </sensor>
+    
+</mujoco>
