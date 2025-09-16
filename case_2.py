@@ -172,6 +172,19 @@ f1_story = []
 f2_story = []
 alignment_story = []
 
+COM_pos = np.zeros((3, 0))
+COM_vel = np.zeros((3, 0))
+COM_acc = np.zeros((3, 0))
+
+goal_pos = np.zeros((3, 0))
+goal_vel = np.zeros((3, 0))
+
+goal_angle_2 = []
+goal_w = []
+
+prop_angle = []
+prop_w = []
+
 contr_act = []
 # meas_diff = np.zeros((3, 0))
 # sim_meas = np.zeros((0, 6))
@@ -251,8 +264,8 @@ ekf_theta.x [5, 0] = m2
 
 init_noise = np.array([0.1, 0.1, 0.1, 0.1, 0.02, 0.02])
 
-# for xi, ni in zip(ekf_theta.x, init_noise):
-#     xi += random.gauss(0, ni)
+for xi, ni in zip(ekf_theta.x, init_noise):
+    xi += random.gauss(0, ni)
 
 # ekf_theta.x [0] += random.gauss(0, init_noise[0])
 
@@ -308,22 +321,28 @@ ekf_theta.P = np.diag(init_noise)
 
 # control params
 
-gamma_v = 0.8
+gamma_v = 0.5
 
-gamma_acc = 1
+gamma_acc = 4
 
-gamma_w = 1
+gamma_w = 5
 
-gamma_ang_acc = 3
+gamma_ang_acc = 10
+
+max_vel = 0.4
+
+max_w = 1
 
 # des_pos = np.zeros(3)
 
 l_des = 0.3
 
-des_angle = 0.4
+des_angle = 0.1
 # des_angle = start_angle
 
-des_pos = l_des * np.array([sin(des_angle), 0, cos(des_angle)]).reshape((3, 1))
+des_pos = np.zeros((3, 1))
+# des_pos = l_des * np.array([sin(des_angle), 0, cos(des_angle)]).reshape((3, 1))
+# print (des_pos)
 
 P_threshold = 5
 
@@ -369,25 +388,30 @@ def control_callback (model, data):
     
     global appl_force, contr_act, cont_force, f1, f2, alignment_story
     
+    global COM_pos, COM_vel, goal_pos, goal_vel
+    global prop_angle, prop_w, goal_angle_2, goal_w
+    
+    global des_pos
+    
     g = - model.opt.gravity[2]
     
     x = ekf_theta.x.copy()
     
     P = ekf_theta.P.copy()
     
-    # x1 = x[0, 0]
-    # x2 = x[1, 0]
-    # x3 = x[2, 0]
-    # x4 = x[3, 0]
-    # x5 = x[4, 0]
-    # x6 = x[5, 0]
+    x1 = x[0, 0]
+    x2 = x[1, 0]
+    x3 = x[2, 0]
+    x4 = x[3, 0]
+    x5 = x[4, 0]
+    x6 = x[5, 0]
     
-    x1 = data.qpos[0]
-    x2 = data.qpos[1]
-    x3 = data.qvel[0]
-    x4 = data.qvel[1]
-    x5 = m1
-    x6 = m2
+    # x1 = data.qpos[0]
+    # x2 = data.qpos[1]
+    # x3 = data.qvel[0]
+    # x4 = data.qvel[1]
+    # x5 = m1
+    # x6 = m2
     
     x = np.array([x1, x2, x3, x4, x5, x6]).reshape((-1, 1))
     
@@ -402,13 +426,27 @@ def control_callback (model, data):
     
     cont_force = np.zeros(3)
     
+    l_des = l_1 * (x5 / 2 + x6) / (x5 + x6)
+    
+    des_pos = l_des * np.array([sin(des_angle), 0, cos(des_angle)]).reshape((3, 1))
+    
     # if P [0, 0] < P_threshold and P [1, 1] < P_threshold and P [2, 2] < P_threshold:
     if True:
 
         curr_pos = l_1 * np.array([sin(x1), 0, cos(x1)]).reshape((3, 1)) * (x5/2 + x6) / (x5 + x6)
         curr_vel = l_1 * x3 * (x5/2 + x6) / (x5 + x6) * np.array([cos(x1), 0, -sin(x1)]).reshape((3, 1))
         
+        COM_pos = np.append(COM_pos, curr_pos.reshape((-1, 1)), axis = 1)
+        COM_vel = np.append(COM_vel, curr_vel.reshape((-1, 1)), axis = 1)
+        
         ref_vel = gamma_v * (des_pos - curr_pos)
+        
+        ref_vel_max = np.linalg.norm(ref_vel)
+        if ref_vel_max > max_vel:
+            ref_vel*= max_vel / ref_vel_max
+            
+        goal_pos = np.append(goal_pos, des_pos.reshape((-1, 1)), axis = 1)
+        goal_vel = np.append(goal_vel, ref_vel.reshape((-1, 1)), axis = 1)
         
         ref_acc = gamma_acc * (ref_vel - curr_vel)
         
@@ -435,7 +473,16 @@ def control_callback (model, data):
     
     curr_prop_w = x3 + x4
     
+    prop_angle.append(curr_prop_angle)
+    prop_w.append(curr_prop_w)
+    
     ref_w = gamma_w * (des_prop_angle - curr_prop_angle)
+    ref_w_max = np.linalg.norm(ref_w)
+    if ref_w_max > max_w:
+        ref_w*= max_w / ref_w_max
+        
+    goal_angle_2.append(des_prop_angle)
+    goal_w.append(ref_w)
     
     ang_err = ref_w - curr_prop_w
     
@@ -620,10 +667,10 @@ def H_jac (x):
     
     H [1, 2] = - 2 * l_1 * x3 * s1
     
-    # H [1, 4] = x6 * g * l_1 * s1
-    # H [1, 4]+= l_1 * sin(x2) * (f1 + f2) 
-    # H [1, 4]+= l_2 / 2 * (f1 - f2)
-    # H [1, 4]*= - l_1 / (I1 * x5) * c1
+    H [1, 4] = x6 * g * l_1 * s1
+    H [1, 4]+= l_1 * sin(x2) * (f1 + f2) 
+    H [1, 4]+= l_2 / 2 * (f1 - f2)
+    H [1, 4]*= - l_1 / (I1 * x5) * c1
     
     
     H [1, 5] = l_1**2 / I1 * g * s1 * c1
@@ -639,10 +686,10 @@ def H_jac (x):
     
     H [2, 2] = - 2 * l_1 * x3 * c1
     
-    # H [2, 4] = x6 * g * l_1 * s1
-    # H [2, 4]+= l_1 * sin(x2) * (f1 + f2)
-    # H [2, 4]+= l_2 / 2 * (f1 - f2)
-    # H [2, 4]*= l_1 / (x5 * I1) * s1
+    H [2, 4] = x6 * g * l_1 * s1
+    H [2, 4]+= l_1 * sin(x2) * (f1 + f2)
+    H [2, 4]+= l_2 / 2 * (f1 - f2)
+    H [2, 4]*= l_1 / (x5 * I1) * s1
     
     H [2, 5] = - s1**2 * g * l_1**2 / I1
     
@@ -720,13 +767,13 @@ def compute_z (data, x):
     
     
     
-    # ang_data_1 += random.gauss(0, model.sensor("IMU_1_gyro").noise[0])
-    # for i in range (0, 3):
-    #     acc_data_1 [i] += random.gauss(0, model.sensor("IMU_1_acc").noise[0])
+    ang_data_1 += random.gauss(0, model.sensor("IMU_1_gyro").noise[0])
+    for i in range (0, 3):
+        acc_data_1 [i] += random.gauss(0, model.sensor("IMU_1_acc").noise[0])
     
-    # ang_data_2 += random.gauss(0, model.sensor("IMU_2_gyro").noise[0])
-    # for i in range (0, 3):
-    #     acc_data_2 [i] += random.gauss(0, model.sensor("IMU_2_acc").noise[0])
+    ang_data_2 += random.gauss(0, model.sensor("IMU_2_gyro").noise[0])
+    for i in range (0, 3):
+        acc_data_2 [i] += random.gauss(0, model.sensor("IMU_2_acc").noise[0])
     
     q_est_1 = x[0, 0]
     #q_est = - x[0]
@@ -805,8 +852,8 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
     viewer.sync()
     
     #print (mujoco.mjtCatBit.mjCAT_ALL)
-    # while viewer.is_running() and (not exit) :
-    while viewer.is_running() and (not exit) and data.time < 10:
+    while viewer.is_running() and (not exit) :
+    # while viewer.is_running() and (not exit) and data.time < 10:
         # if data.time > 0.348:
         #     print (H_jac(ekf_theta.x))
         #     print('P:\n', ekf_theta.P)
@@ -929,8 +976,8 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                     pos = c_t_est, mat = np.eye(3).flatten(), rgba = orange_color)
                 
                 #virtual applied force
-                draw_vector(viewer, 8, data.site("IMU_1_loc").xpos, white_color, appl_force,  k_f * mujoco.mju_norm(appl_force))
-                # draw_vector(viewer, 8, data.site("IMU_1_loc").xpos, white_color, cont_force,  10 * k_f * mujoco.mju_norm(cont_force))
+                # draw_vector(viewer, 8, data.site("IMU_1_loc").xpos, white_color, appl_force,  k_f * mujoco.mju_norm(appl_force))
+                draw_vector(viewer, 8, data.site("IMU_1_loc").xpos, white_color, cont_force,  10 * k_f * mujoco.mju_norm(cont_force))
                 
                 draw_vector_euler(viewer, 9, data.site("IMU_1_loc").xpos, green_color, 0.2, bar_rot)
                 
@@ -1118,5 +1165,17 @@ with open(csv_name, 'w', newline = '') as csvfile:
         data_writer.writerow(np.zeros(len(sim_time)))
     else:
         data_writer.writerow(alignment_story)
+        
+    data_writer.writerows(COM_pos)
+    data_writer.writerows(COM_vel)
+    
+    data_writer.writerows(goal_pos)
+    data_writer.writerows(goal_vel)
+    
+    data_writer.writerow(prop_angle)
+    data_writer.writerow(prop_w)
+    
+    data_writer.writerow(goal_angle_2)
+    data_writer.writerow(goal_w)
     
 print ("data stored in file", csv_name)
