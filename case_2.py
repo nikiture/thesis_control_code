@@ -44,6 +44,10 @@ class Modif_EKF(ExtendedKalmanFilter):
         
         self.x += dxb
         
+        # dx = dt * np.array([x[2, 0], x[3, 0], dx3, dx4, 0, 0]).reshape((-1, 1))
+        
+        # self.x+= dx
+        
 
 #print (model.nbody)
 
@@ -63,8 +67,8 @@ mujoco.mjv_defaultOption(options) """
 
 
 
-# start_angle = 0.9 * math.pi / 2
-start_angle = math.pi / 4
+start_angle = 0.9 * math.pi / 2
+# start_angle = math.pi / 4
 
 #start_angle = math.pi - start_angle
 
@@ -89,7 +93,7 @@ l_2 = 0.2
 m1 = model.body("pendulum").mass[0]
 m2 = model.body("prop_bar").mass[0]
 
-print (m1, m2)
+# print (m1, m2)
 
 # def compute_I1(m_1, m_2):
 #     return l_1**2 * (m_1 / 3 + m_2)
@@ -120,7 +124,7 @@ def compute_accelerations(x, u = np.zeros((2, 1))):
     ang_acc_1+= l_1 * s2 * (u[0, 0] + u[1, 0])
     # ang_acc_1+= l_1 * s2 * (u[0, 0] + u[1, 0]) / 2 
     # ang_acc_1-= l_1 * s2 * (u[0, 0] + u[1, 0]) 
-    ang_acc_1+= l_2 / 2 * (u[0, 0] - u[1, 0])
+    # ang_acc_1+= l_2 / 2 * (u[0, 0] - u[1, 0])
     # ang_acc_1-= l_2 / 2 * (u[0, 0] - u[1, 0])
     ang_acc_1/= I1
         
@@ -164,10 +168,16 @@ est_mass_2 = []
 sim_acc_2 = []
 est_acc_2 = []
 
+f1_story = []
+f2_story = []
+alignment_story = []
+
 contr_act = []
-meas_diff = np.zeros((3, 0))
-sim_meas = np.zeros((0, 3))
-est_meas = np.zeros((0, 3))
+# meas_diff = np.zeros((3, 0))
+# sim_meas = np.zeros((0, 6))
+# est_meas = np.zeros((0, 6))
+sim_meas = np.zeros((6, 0))
+est_meas = np.zeros((6, 0))
 covar_values = np.zeros((3, 0))
 
 
@@ -271,7 +281,7 @@ R [4, 4] = var_acc_2
 R [5, 5] = var_acc_2
 
 # R *= 0.8
-
+# R*= 0.001
 ekf_theta.R = R.copy()
 
 
@@ -357,7 +367,7 @@ cont_force = np.zeros(3)
         
 def control_callback (model, data):
     
-    global appl_force, contr_act, cont_force, f1, f2
+    global appl_force, contr_act, cont_force, f1, f2, alignment_story
     
     g = - model.opt.gravity[2]
     
@@ -378,6 +388,8 @@ def control_callback (model, data):
     x4 = data.qvel[1]
     x5 = m1
     x6 = m2
+    
+    x = np.array([x1, x2, x3, x4, x5, x6]).reshape((-1, 1))
     
     m1_est = x5
     m2_est = x6
@@ -415,7 +427,7 @@ def control_callback (model, data):
     #appl_force = np.array([cont_force_x, 0, bal_force])
     mujoco.mju_add (appl_force, cont_force, des_bal_force)
     
-    I1, I2 = compute_inertias(ekf_theta.x)
+    I1, I2 = compute_inertias(x)
     
     des_prop_angle = math.atan(appl_force[0] / appl_force[2])
     
@@ -443,16 +455,18 @@ def control_callback (model, data):
     
     if abs (ang_err) < 0.001:
         # print ("aligned")
+        alignment_story.append(1)
         appl_int = mujoco.mju_norm(appl_force) / 2 
         data.actuator("propeller1").ctrl += appl_int
         data.actuator("propeller2").ctrl += appl_int
     else:
         # print("not aligned")
+        alignment_story.append(0)
         data.actuator("propeller1").ctrl += curr_bal_int / 2
         data.actuator("propeller2").ctrl += curr_bal_int / 2
     
-    f1 = data.actuator("propeller1").ctrl.copy()
-    f2 = data.actuator("propeller2").ctrl.copy()
+    f1 = data.actuator("propeller1").ctrl[0].copy()
+    f2 = data.actuator("propeller2").ctrl[0].copy()
     
     
     
@@ -480,6 +494,7 @@ def kb_callback(keycode):
         appl_force = not appl_force """
         
 #x = np.zeros(6)
+# def h_x (x, f1, f2):
 def h_x (x):
     # global appl_force
     
@@ -496,6 +511,18 @@ def h_x (x):
     s1 = math.sin(x1)
     g = - model.opt.gravity[2]
     
+    # l_p = math.sqrt(l_1**2 + l_2**2 / 4 - l_1 * l_2 * sin(x2))
+    
+    q_est_1 = x1
+    
+    q_est_2 = x1 + x2
+    
+    R1 = np.array([[math.cos(q_est_1), 0, math.sin(q_est_1)], [0, 1, 0], [-math.sin(q_est_1), 0, math.cos(q_est_1)]])
+    
+    R2 = np.array([[math.cos(q_est_2), 0, math.sin(q_est_2)], [0, 1, 0], [-math.sin(q_est_2), 0, math.cos(q_est_2)]])
+    
+    
+    
     
     H = np.zeros ((6, 1))
     
@@ -503,15 +530,27 @@ def h_x (x):
     
     ang_a_1, _ = compute_accelerations(x, np.array([[f1], [f2]]))
     
+    # calc_a1 = np.zeros((3, 1))
+    # calc_a2 = np.zeros((3, 1))
+    
     H [0] = x3
     
-    H [1] = x3**2 * s1 
-    H [1]+= c1 * ang_a_1
-    H [1]*= l_1 / I1
+    H [1] = c1 * ang_a_1
+    H [1]-= x3**2 * s1 
+    H [1]*= l_1
     
-    H [2] = - x3**2 * c1
-    H [2]-= s1 * ang_a_1
-    H [2]*= l_1 / I1
+    H [2] = - s1 * ang_a_1
+    H [2]-= x3**2 * c1 
+    H [2]*= l_1
+    
+    # calc_a1 = np.array([[H [1, 0]], [0], [H [2, 0]]])
+    
+    # mujoco.mju_mulMatTVec (calc_a1, R1, calc_a1.copy())
+    
+    # H [1] = calc_a1 [0, 0]
+    # H [2] = calc_a1 [2, 0]
+    
+    
     
     
     H [3] = x3 + x4
@@ -519,13 +558,30 @@ def h_x (x):
     H [4] = l_2 / (2 * I2) * sin(x1 + x2) * (f1 - f2)
     H [4]+= (x3 + x4)**2 * cos(x1 + x2)
     H [4]*= - l_2 / 2 
-    H [4]+= H [1]
+    # H [4]*= - l_2
+    # H [4]+= H [1]
+    # H [4]+= H [1] * l_p / l_1
+    # H [4]+= H [1] * l_1 / l_p
+    # H [4]+= H [1] * (1 - l_p / l_1)
+    # H [4]+= H [1] * (1 + l_p / l_1)
+    # H [4]-= H [1] * (1 - l_p / l_1)
     
-    H [5] = l_2 / (2 * I2) * cos(x1 + x2) * (f1 - f2)
-    H [5]-= (x3 + x4)**2 * sin(x1 + x2)
+    H [5] = - l_2 / (2 * I2) * cos(x1 + x2) * (f1 - f2)
+    H [5]+= (x3 + x4)**2 * sin(x1 + x2)
     H [5]*= l_2 / 2
-    H [5]+= H [2]
+    # H [5]+= H [2]
+    # H [5]+= H [2] * l_p / l_1
+    # H [5]+= H [2] * l_1 / l_p
+    # H [5]+= H [2] * (1 - l_p / l_1)
+    # H [5]+= H [2] * (1 + l_p / l_1)
+    # H [5]-= H [2] * (1 - l_p / l_1)
     
+    # calc_a2 = np.array([[H [4, 0]], [0], [H [5, 0]]])
+    
+    # mujoco.mju_mulMatTVec (calc_a2, R2, calc_a2.copy())
+    
+    # H [4] = calc_a2 [0, 0]
+    # H [5] = calc_a2 [2, 0]
     
     return H.reshape((-1, 1)) 
 
@@ -560,14 +616,15 @@ def H_jac (x):
     H [1, 0]*= l_1 / I1 
     H [1, 0]-= l_1 * x3**2 * c1
     
-    H [1, 1] = l_1**2 / I1 * c1 * sin(x2) * (f1 + f2)
+    H [1, 1] = l_1**2 / I1 * c1 * cos(x2) * (f1 + f2)
     
     H [1, 2] = - 2 * l_1 * x3 * s1
     
-    H [1, 4] = x6 * g * l_1 * s1
-    H [1, 4]+= l_1 * sin(x2) * (f1 + f2) 
-    H [1, 4]+= l_2 / 2 * (f1 - f2)
-    H [1, 4]*= - l_1 / (I1 * x5)
+    # H [1, 4] = x6 * g * l_1 * s1
+    # H [1, 4]+= l_1 * sin(x2) * (f1 + f2) 
+    # H [1, 4]+= l_2 / 2 * (f1 - f2)
+    # H [1, 4]*= - l_1 / (I1 * x5) * c1
+    
     
     H [1, 5] = l_1**2 / I1 * g * s1 * c1
     
@@ -582,12 +639,12 @@ def H_jac (x):
     
     H [2, 2] = - 2 * l_1 * x3 * c1
     
-    H [2, 4] = x6 * g * l_1 * s1
-    H [2, 4]+= l_1 * sin(x2) * (f1 + f2)
-    H [2, 4]+= l_2 / 2 * (f1 - f2)
-    H [2, 4]*= l_1 / (x5 * I1) * s1
+    # H [2, 4] = x6 * g * l_1 * s1
+    # H [2, 4]+= l_1 * sin(x2) * (f1 + f2)
+    # H [2, 4]+= l_2 / 2 * (f1 - f2)
+    # H [2, 4]*= l_1 / (x5 * I1) * s1
     
-    H [2, 5] = s1**2 * g * l_1**2 / I1
+    H [2, 5] = - s1**2 * g * l_1**2 / I1
     
     
     H [3, 2] = 1
@@ -600,9 +657,9 @@ def H_jac (x):
     
     H [4, 1] = H [4, 0]
     
-    H [4, 0]+= H [1, 0]
+    # H [4, 0]+= H [1, 0]
     
-    H [4, 1]+= H [1, 1]
+    # H [4, 1]+= H [1, 1]
     
     H [4, 2] = - l_2 * (x3 + x4) * cos(x1 + x2)
     
@@ -612,14 +669,16 @@ def H_jac (x):
     
     # H [4, 3]+= H [1, 3]
     
-    H [4, 5] = 3 / (x6**2) * sin(x1 + x2) * (f1 - f2)
+    H [4, 5] = l_2**2 / (4 * x6 * I2) * sin(x1 + x2) * (f1 - f2)
     
     # H [4, 5]+= H [1, 5]
     
     # H [4, 4]+= H [1, 4]
 
     
-    H [5, 0] = l_2 / 2 * (x3 + x4)**2 * cos(x1 + x2) + l_2 **2 / (4 * I2) * sin(x1 + x2) * (f1 - f2)
+    H [5, 0] = l_2 / (2 * I2) * sin(x1 + x2) * (f1 - f2)
+    H [5, 0]+= (x3 - x4)**2 * cos(x1 + x2)
+    H [5, 0]*= l_2 / 2
     
     H [5, 1] = H [5, 0]
     
@@ -635,27 +694,15 @@ def H_jac (x):
     
     # H [5, 3]+= H [2, 3]
     
-    H [5, 5] = - 3 / (x6**2) * cos(x1 + x2) * (f1 - f2)
+    H [5, 5] = l_2**2 / (4 * x6 * I2) * cos(x1 + x2) * (f1 - f2)
     
     # H [5, 5]+= H [2, 5]
     
     # H [5, 4]+= H [2, 4]
     
-    """ H [4, 0] = l_2 / 2 * (x3**2 + x4**2) * sin(x1 + x2) - l_2**2 / (4 * I2) * cos(x1 + x2) * (f1 - f2)
+    # H [3:, :]*= 0
+    # print (H)
     
-    H [4, 1] = H [4, 0]
-    
-    H [4, 2] = - l_2 * x3 * cos(x1 + x2)
-    
-    H [4, 3] = - l_2 * x4 * cos(x1 + x2)
-    
-    H [5, 0] = l_2 / 2 * (x3**2 + x4**2) * cos(x1 + x2) + l_2**2 / (4 * I2) * sin(x1 + x2) * (f1 - f2)
-    
-    H [5, 1] = H [5, 0]
-    
-    H [5, 2] = l_2 * x3 * sin(x1 + x2)
-    
-    H [5, 3] = l_2 * x4 * sin(x1 + x2) """
     return H
 
     
@@ -677,14 +724,14 @@ def compute_z (data, x):
     # for i in range (0, 3):
     #     acc_data_1 [i] += random.gauss(0, model.sensor("IMU_1_acc").noise[0])
     
-    # ang_data_2 += random.gauss(0, model.sensor("IMU_1_gyro").noise[0])
+    # ang_data_2 += random.gauss(0, model.sensor("IMU_2_gyro").noise[0])
     # for i in range (0, 3):
-    #     acc_data_2 [i] += random.gauss(0, model.sensor("IMU_1_acc").noise[0])
+    #     acc_data_2 [i] += random.gauss(0, model.sensor("IMU_2_acc").noise[0])
     
-    q_est_1 = x[0]
+    q_est_1 = x[0, 0]
     #q_est = - x[0]
     #q_est = data.qpos[0]
-    q_est_2 = x[0] + x[1]
+    q_est_2 = x[0, 0] + x[1, 0]
     #q_est = - x[2]
     
     R1 = np.array([[math.cos(q_est_1), 0, math.sin(q_est_1)], [0, 1, 0], [-math.sin(q_est_1), 0, math.cos(q_est_1)]])
@@ -697,6 +744,7 @@ def compute_z (data, x):
     mujoco.mju_mulMatVec (acc_data_2, R2, acc_data_2.copy())
     
     
+    
     #print (acc_data, data.body("prop_bar").cacc[3:])
     #print (acc_data - data.body("prop_bar").cacc[3:])
     
@@ -705,13 +753,15 @@ def compute_z (data, x):
     acc_data_1 += model.opt.gravity
     acc_data_2 += model.opt.gravity
     
+    acc_data_2 -= acc_data_1    
+    
     
     z = np.array([ang_data_1, acc_data_1[0], acc_data_1[2], ang_data_2, acc_data_2[0], acc_data_2[2]])
     
     
     return z.reshape((-1, 1))
 
-z = np.zeros(3)
+z = np.zeros((6, 1))
 resid = np.zeros((1, 3))
 f_u = np.zeros(2).reshape(-1, 1)
         
@@ -757,6 +807,10 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
     #print (mujoco.mjtCatBit.mjCAT_ALL)
     # while viewer.is_running() and (not exit) :
     while viewer.is_running() and (not exit) and data.time < 10:
+        # if data.time > 0.348:
+        #     print (H_jac(ekf_theta.x))
+        #     print('P:\n', ekf_theta.P)
+        #     break
         step_start = time.time()
         #mujoco.mj_forward(model, data)
         #print ('running iteration')
@@ -768,16 +822,11 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                 # mujoco.mj_step(model, data)
                 sim_time.append (data.time)
                 sim_theta.append(data.qpos[0])
-                """ est_q = ekf_theta.x[0] % (2 * math.pi)
                 
-                if est_q > math.pi:
-                    est_q -= 2 * math.pi """
                 est_q = ekf_theta.x[0, 0]
                 est_theta.append(est_q)
-                """ angle.append(data.qpos[0])
-                torque.append(data.ctrl[0]) """
-                sim_meas = np.append(sim_meas, z.reshape((-1, 3)), axis = 0)
-                est_meas = np.append(est_meas, h_x(ekf_theta.x).reshape((-1, 3)), axis = 0)
+                
+                
                 
                 sim_vel.append(data.qvel[0])
                 est_vel.append(ekf_theta.x[2, 0])
@@ -793,17 +842,30 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                 
                 sim_acc.append(data.qacc[0])
                 sim_acc_2.append(data.qacc[1])
-                curr_est_acc, curr_est_acc_2 = compute_accelerations(sim_state, f_u)
+                curr_est_acc, curr_est_acc_2 = compute_accelerations(ekf_theta.x, f_u)
+                # curr_est_acc, curr_est_acc_2 = compute_accelerations(sim_state, f_u)
                 # curr_est_acc, curr_est_acc_2 = compute_accelerations(sim_state)
                 est_acc.append(curr_est_acc)
                 est_acc_2.append(curr_est_acc_2)
+                
+                est_mass.append(ekf_theta.x[4, 0])
+                est_mass_2.append(ekf_theta.x[5, 0])
                 
                 # sim_acc.append(data.qacc[0])
                 # sim_acc_2.append(data.qacc[1])
                 # curr_est_acc, curr_est_acc_2 = compute_accelerations(ekf_theta.x, f_u)
                 # est_acc.append(curr_est_acc)
                 # est_acc_2.append(curr_est_acc_2)
+                # print (z)
+                # print (z.shape)
                 
+                
+                # sim_meas = np.append(sim_meas, z.reshape((-1, 1)), axis = 1)
+                # # est_meas = np.append(est_meas, h_x(ekf_theta.x).reshape((-1, 3)), axis = 0)
+                # est_meas = np.append(est_meas, h_x(sim_state).reshape((-1, 1)), axis = 1)
+                
+                
+                # print (sim_meas.shape)
                 
                 
                 # est_len.append(ekf_theta.x[2, 0])
@@ -823,7 +885,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                 IMU_1_est_pos = l_1 * np.array([math.sin(q1_est), 0, math.cos(q1_est)]) 
                 c_t_est = IMU_1_est_pos * (m1_est/2 + m2_est) / (m1_est + m2_est)   
                 
-                IMU_2_est_pos = IMU_1_est_pos + l_2 / 2 * np.array([math.cos(q1_est + q2_est), 0, math.sin(q1_est + q2_est)])
+                IMU_2_est_pos = IMU_1_est_pos + l_2 / 2 * np.array([math.cos(q1_est + q2_est), 0, - math.sin(q1_est + q2_est)])
                 
                 #print (dir(data.site('stick_end')))
                 
@@ -909,7 +971,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                 F [2, 0] = l_1 * cos(x[0, 0]) * g * (x[4, 0] / 2 + x[5, 0])
                 F [2, 0]*= dt / I1 
                 
-                F [2, 1] = l_1 * cos(x[1]) * (f1 + f2)
+                F [2, 1] = l_1 * cos(x[1, 0]) * (f1 + f2)
                 F [2, 1]*= dt / I1 
                 
                 # F [2, 4] = 3 / 2 * x[5] / l_1 * sin(x[0]) * g - 3 / l_1 * sin(x[1]) * (f1 + f2) - 3 / 2 * l_2 / (l_1**2) * (f1 - f2)
@@ -971,13 +1033,23 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                                                             
                     
                     mujoco.mj_forward(model, data)
-                    z = compute_z(data, ekf_theta.x)
+                    # z = compute_z(data, ekf_theta.x)
+                    z = compute_z(data, sim_state)
+                    
+                    # h_est = h_x(ekf_theta.x, f1, f2)
                     h_est = h_x(ekf_theta.x)
                     
-                    # ekf_theta.update(z = z, HJacobian = H_jac, Hx = h_x)
+                    ekf_theta.update(z = z, HJacobian = H_jac, Hx = h_x)
+                
+                z_sim = compute_z(data, sim_state)
+                sim_meas = np.append(sim_meas, z_sim.reshape((-1, 1)), axis = 1)
+                # est_meas = np.append(est_meas, h_x(ekf_theta.x).reshape((-1, 3)), axis = 0)
+                # est_meas = np.append(est_meas, h_x(sim_state).reshape((-1, 1)), axis = 1)
+                est_meas = np.append(est_meas, h_est.reshape((-1, 1)), axis = 1)
                 
                 
-                
+                f1_story.append(f1)
+                f2_story.append(f2)
                 
                 ekf_count = (ekf_count + 1) % count_max
                 
@@ -1004,12 +1076,15 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
 
 #print (angle_err)
 #  print (sim_meas)
-# sim_meas = np.asarray(sim_meas).reshape((3, -1))
-# est_meas = np.asarray(est_meas).reshape((3, -1))
+# sim_meas = np.asarray(sim_meas).reshape((6, -1))
+# est_meas = np.asarray(est_meas).reshape((6, -1))
 
-
+# print (sim_meas[:, -1])
+# print (z)
 
 # csv_name = os.path.realpath(__file__) + 'data_to_plot/case_1_unc_l_data.csv'
+
+# print (len(alignment_story))
 csv_name = './data_to_plot/case_2_unc_data.csv'
 
 with open(csv_name, 'w', newline = '') as csvfile:
@@ -1018,14 +1093,30 @@ with open(csv_name, 'w', newline = '') as csvfile:
     data_writer.writerow(sim_theta)
     data_writer.writerow(sim_vel)
     data_writer.writerow(sim_acc)
+    data_writer.writerow(m1 * np.ones(len(sim_time)))
     data_writer.writerow(est_theta)
     data_writer.writerow(est_vel)
     data_writer.writerow(est_acc)
+    data_writer.writerow(est_mass)
     
     data_writer.writerow(sim_theta_2)
     data_writer.writerow(sim_vel_2)
     data_writer.writerow(sim_acc_2)
+    data_writer.writerow(m2 * np.ones(len(sim_time)))
     data_writer.writerow(est_theta_2)
     data_writer.writerow(est_vel_2)
     data_writer.writerow(est_acc_2)
+    data_writer.writerow(est_mass_2)
+    
+    data_writer.writerows(sim_meas)
+    data_writer.writerows(est_meas) 
+    
+    data_writer.writerow(f1_story)
+    data_writer.writerow(f2_story)
+    
+    if len(alignment_story) == 0:
+        data_writer.writerow(np.zeros(len(sim_time)))
+    else:
+        data_writer.writerow(alignment_story)
+    
 print ("data stored in file", csv_name)
