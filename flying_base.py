@@ -15,15 +15,6 @@ from filterpy.common import Q_discrete_white_noise
 import csv
 import os
 
-
-    
-
-model = mujoco.MjModel.from_xml_path ("models/case_2_pend.xml")
-#model.opt.timestep = 0.002
-#model = mujoco.MjModel.from_xml_path ("tutorial_models/3D_pendulum_actuator.xml")
-#model.opt.integrator = mujoco.mjtIntegrator.mjINT_RK4
-data = mujoco.MjData(model)
-
 class Modif_EKF(ExtendedKalmanFilter):
     def __init__(self, dim_x, dim_z, dim_u = 0):
         super().__init__(dim_x, dim_z, dim_u)
@@ -47,7 +38,24 @@ class Modif_EKF(ExtendedKalmanFilter):
         # dx = dt * np.array([x[2, 0], x[3, 0], dx3, dx4, 0, 0]).reshape((-1, 1))
         
         # self.x+= dx
-        
+  
+def quat2eul(quat, eul):
+    qw = quat[0]
+    qx = quat[1]
+    qy = quat[2]
+    qz = quat[3] 
+    
+    eul[0] = math.atan2(2 * (qw * qx + qy * qz), 1 - 2 * (qx**2 + qy**2))
+    eul[1] = 2 * math.atan2(math.sqrt(1 + 2 * (qw * qy - qx * qz)), math.sqrt (1 - 2 * (qw * qy - qx * qz))) - math.pi / 2
+    eul[2] = math.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy**2 + qz**2))   
+
+model = mujoco.MjModel.from_xml_path ("models/floating_base.xml")
+#model.opt.timestep = 0.002
+#model = mujoco.MjModel.from_xml_path ("tutorial_models/3D_pendulum_actuator.xml")
+#model.opt.integrator = mujoco.mjtIntegrator.mjINT_RK4
+data = mujoco.MjData(model)
+
+
 
 #print (model.nbody)
 
@@ -67,31 +75,26 @@ mujoco.mjv_defaultOption(options) """
 
 
 
-start_angle = 0.9 * math.pi / 2
-# start_angle = math.pi / 4
-
-#start_angle = math.pi - start_angle
-
-data.qpos[0] = start_angle
-
-data.qpos[1] = - start_angle
+data.qpos[2] = 0.1
+data.qpos[7] = 0.9 * math.pi/2
 
 mujoco.mj_forward(model, data)
 
-mujoco.mju_zero(data.sensordata)
+# mujoco.mju_zero(data.sensordata)
 
 # print (data.qvel)
 
 #l_2 = mujoco.mju_dist3(data.joint("prop_base_joint").xanchor, data.site("leg_end").xpos)
-l_1 = 0.5
-b_1 = 0.01
+l_bar = 0.2
+l_leg_1 = 0.5
 
-l_2 = 0.2
+
+
 
 # m1 = data.body("pendulum").cinert[9]
 # m2 = data.body("prop_bar").cinert[9]
-m1 = model.body("pendulum").mass[0]
-m2 = model.body("prop_bar").mass[0]
+m1 = model.body("prop_bar").mass[0]
+m2 = model.body("leg_1").mass[0]
 
 # print (m1, m2)
 
@@ -101,8 +104,8 @@ m2 = model.body("prop_bar").mass[0]
 #     return l_2**2 * m_2 / 12
 
 def compute_inertias(x):
-    I1 = l_1**2 * (x[4, 0] / 3 + x[5, 0])
-    I2 = l_2**2 * x[5, 0] / 12
+    I1 = l_leg_1**2 * (x[4, 0] / 3 + x[5, 0])
+    I2 = l_bar**2 * x[5, 0] / 12
     
     # I1+= I2
     
@@ -336,14 +339,17 @@ max_w = 1
 # des_pos = np.zeros(3)
 
 # l_des = 0.3
-l_des = l_1 * (m1 / 2 + m2) / (m1 + m2)
+# l_des = l_1 * (m1 / 2 + m2) / (m1 + m2)
 
 des_angle = 0.2
 # des_angle = start_angle
 
-des_pos = np.zeros((3, 1))
+# des_pos = np.zeros((3, 1))
 # des_pos = l_des * np.array([sin(des_angle), 0, cos(des_angle)]).reshape((3, 1))
+des_pos = np.array([0.2, 0, 0.8]).reshape((-1, 1))
+
 # print (des_pos)
+
 
 P_threshold = 5
 
@@ -400,12 +406,12 @@ def control_callback (model, data):
     
     P = ekf_theta.P.copy()
     
-    x1 = x[0, 0]
-    x2 = x[1, 0]
-    x3 = x[2, 0]
-    x4 = x[3, 0]
-    x5 = x[4, 0]
-    x6 = x[5, 0]
+    # x1 = x[0, 0]
+    # x2 = x[1, 0]
+    # x3 = x[2, 0]
+    # x4 = x[3, 0]
+    # x5 = x[4, 0]
+    # x6 = x[5, 0]
     
     # x1 = data.qpos[0]
     # x2 = data.qpos[1]
@@ -414,31 +420,37 @@ def control_callback (model, data):
     # x5 = m1
     # x6 = m2
     
-    x = np.array([x1, x2, x3, x4, x5, x6]).reshape((-1, 1))
+    # x = np.array([x1, x2, x3, x4, x5, x6]).reshape((-1, 1))
     
-    m1_est = x5
-    m2_est = x6
+    # m1_est = x5
+    # m2_est = x6
+    
+    m1_est = m1
+    m2_est = m2
     
     
     
-    des_bal_force = np.array([0, 0, g * (m1_est / 2 + m2_est)])
+    des_bal_force = np.array([0, 0, g * (m1_est + m2_est)])
     
-    curr_bal_int = -g * (m1_est / 2 + m2_est) * sin(x1) / (sin(x2))
+    # curr_bal_int = -g * (m1_est / 2 + m2_est) * sin(x1) / (sin(x2))
     
     cont_force = np.zeros(3)
     
     # l_des = l_1 * (x5 / 2 + x6) / (x5 + x6)
     
-    des_pos = l_des * np.array([sin(des_angle), 0, cos(des_angle)]).reshape((3, 1))
+    # des_pos = l_des * np.array([sin(des_angle), 0, cos(des_angle)]).reshape((3, 1))
     
     # if P [0, 0] < P_threshold and P [1, 1] < P_threshold and P [2, 2] < P_threshold:
     if True:
 
-        curr_pos = l_1 * np.array([sin(x1), 0, cos(x1)]).reshape((3, 1)) * (x5/2 + x6) / (x5 + x6)
-        curr_vel = l_1 * x3 * (x5/2 + x6) / (x5 + x6) * np.array([cos(x1), 0, -sin(x1)]).reshape((3, 1))
+        # curr_pos = l_1 * np.array([sin(x1), 0, cos(x1)]).reshape((3, 1)) * (x5/2 + x6) / (x5 + x6)
+        # curr_vel = l_1 * x3 * (x5/2 + x6) / (x5 + x6) * np.array([cos(x1), 0, -sin(x1)]).reshape((3, 1))
         
-        COM_pos = np.append(COM_pos, curr_pos.reshape((-1, 1)), axis = 1)
-        COM_vel = np.append(COM_vel, curr_vel.reshape((-1, 1)), axis = 1)
+        curr_pos = data.qpos[:3].copy().reshape((-1, 1))
+        curr_vel = data.qvel[:3].copy().reshape((-1, 1))
+        
+        # COM_pos = np.append(COM_pos, curr_pos.reshape((-1, 1)), axis = 1)
+        # COM_vel = np.append(COM_vel, curr_vel.reshape((-1, 1)), axis = 1)
         
         ref_vel = gamma_v * (des_pos - curr_pos)
         
@@ -446,12 +458,12 @@ def control_callback (model, data):
         if ref_vel_max > max_vel:
             ref_vel*= max_vel / ref_vel_max
             
-        goal_pos = np.append(goal_pos, des_pos.reshape((-1, 1)), axis = 1)
-        goal_vel = np.append(goal_vel, ref_vel.reshape((-1, 1)), axis = 1)
+        # goal_pos = np.append(goal_pos, des_pos.reshape((-1, 1)), axis = 1)
+        # goal_vel = np.append(goal_vel, ref_vel.reshape((-1, 1)), axis = 1)
         
         ref_acc = gamma_acc * (ref_vel - curr_vel)
         
-        cont_force = (x5 + x6) * ref_acc
+        cont_force = (m1_est + m2_est) * ref_acc
         # cont_force*=-1
         
         
@@ -470,20 +482,22 @@ def control_callback (model, data):
     
     des_prop_angle = math.atan(appl_force[0] / appl_force[2])
     
-    curr_prop_angle = x1 + x2
+    curr_bar_eul = np.zeros(3)
+    quat2eul(data.qpos[3:7], curr_bar_eul)
+    curr_prop_angle = curr_bar_eul[1]
     
-    curr_prop_w = x3 + x4
+    curr_prop_w = data.qvel[4]
     
-    prop_angle.append(curr_prop_angle)
-    prop_w.append(curr_prop_w)
+    # prop_angle.append(curr_prop_angle)
+    # prop_w.append(curr_prop_w)
     
     ref_w = gamma_w * (des_prop_angle - curr_prop_angle)
     ref_w_max = np.linalg.norm(ref_w)
     if ref_w_max > max_w:
         ref_w*= max_w / ref_w_max
         
-    goal_angle_2.append(des_prop_angle)
-    goal_w.append(ref_w)
+    # goal_angle_2.append(des_prop_angle)
+    # goal_w.append(ref_w)
     
     ang_err = ref_w - curr_prop_w
     
@@ -494,7 +508,7 @@ def control_callback (model, data):
     ref_moment/= 1/I2 - 1/I1
     # ref_moment*= -1
     
-    rot_int = ref_moment * 2 / l_2
+    rot_int = ref_moment * 2 / l_bar
     
     # rot_int*= 0
     
@@ -874,216 +888,187 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
             step = False
             with viewer.lock():
                 # mujoco.mj_step(model, data)
-                sim_time.append (data.time)
-                sim_theta.append(data.qpos[0])
+                # sim_time.append (data.time)
+                # sim_theta.append(data.qpos[0])
                 
-                est_q = ekf_theta.x[0, 0]
-                est_theta.append(est_q)
-                
-                
-                
-                sim_vel.append(data.qvel[0])
-                est_vel.append(ekf_theta.x[2, 0])
-                
-                sim_theta_2.append(data.qpos[1])
-                est_theta_2.append(ekf_theta.x[1, 0])
-                
-                sim_vel_2.append(data.qvel[1])
-                est_vel_2.append(ekf_theta.x[3, 0])
+                # est_q = ekf_theta.x[0, 0]
+                # est_theta.append(est_q)
                 
                 
-                sim_state = np.concatenate((data.qpos, data.qvel, np.array([m1, m2]))).reshape((-1, 1))
                 
-                sim_acc.append(data.qacc[0])
-                sim_acc_2.append(data.qacc[1])
-                curr_est_acc, curr_est_acc_2 = compute_accelerations(ekf_theta.x, f_u)
-                # curr_est_acc, curr_est_acc_2 = compute_accelerations(sim_state, f_u)
-                # curr_est_acc, curr_est_acc_2 = compute_accelerations(sim_state)
-                est_acc.append(curr_est_acc)
-                est_acc_2.append(curr_est_acc_2)
+                # sim_vel.append(data.qvel[0])
+                # est_vel.append(ekf_theta.x[2, 0])
                 
-                est_mass.append(ekf_theta.x[4, 0])
-                est_mass_2.append(ekf_theta.x[5, 0])
+                # sim_theta_2.append(data.qpos[1])
+                # est_theta_2.append(ekf_theta.x[1, 0])
+                
+                # sim_vel_2.append(data.qvel[1])
+                # est_vel_2.append(ekf_theta.x[3, 0])
+                
+                
+                # sim_state = np.concatenate((data.qpos, data.qvel, np.array([m1, m2]))).reshape((-1, 1))
                 
                 # sim_acc.append(data.qacc[0])
                 # sim_acc_2.append(data.qacc[1])
                 # curr_est_acc, curr_est_acc_2 = compute_accelerations(ekf_theta.x, f_u)
+                # # curr_est_acc, curr_est_acc_2 = compute_accelerations(sim_state, f_u)
+                # # curr_est_acc, curr_est_acc_2 = compute_accelerations(sim_state)
                 # est_acc.append(curr_est_acc)
                 # est_acc_2.append(curr_est_acc_2)
-                # print (z)
-                # print (z.shape)
+                
+                # est_mass.append(ekf_theta.x[4, 0])
+                # est_mass_2.append(ekf_theta.x[5, 0])
                 
                 
-                # sim_meas = np.append(sim_meas, z.reshape((-1, 1)), axis = 1)
-                # # est_meas = np.append(est_meas, h_x(ekf_theta.x).reshape((-1, 3)), axis = 0)
-                # est_meas = np.append(est_meas, h_x(sim_state).reshape((-1, 1)), axis = 1)
-                
-                
-                # print (sim_meas.shape)
-                
-                
-                # est_len.append(ekf_theta.x[2, 0])
                 
                 q1_est = ekf_theta.x[0, 0]
                 q2_est = ekf_theta.x[1, 0]
                 
                 m1_est = ekf_theta.x[4, 0]
                 m2_est = ekf_theta.x[5, 0]
-                # l_est = ekf_theta.x[2]
-                #q_est = - ekf_theta.x[0]
+                 
+                # IMU_1_est_pos = l_leg_1 * np.array([math.sin(q1_est), 0, math.cos(q1_est)]) 
+                # c_t_est = IMU_1_est_pos * (m1_est/2 + m2_est) / (m1_est + m2_est)   
                 
-                #c_t_est = l_1 * np.array([- math.sin(q_est), 0, math.cos(q_est)])  
-                #print (q_est)  
-                #c_t_est = l_1 / 2 * np.array([math.sin(q_est), 0, math.cos(q_est)])    
-                #c_t_est = - l_1 / 2 * np.array([math.sin(q_est), 0, math.cos(q_est)]) 
-                IMU_1_est_pos = l_1 * np.array([math.sin(q1_est), 0, math.cos(q1_est)]) 
-                c_t_est = IMU_1_est_pos * (m1_est/2 + m2_est) / (m1_est + m2_est)   
+                # IMU_2_est_pos = IMU_1_est_pos + l_2 / 2 * np.array([math.cos(q1_est + q2_est), 0, - math.sin(q1_est + q2_est)])
                 
-                IMU_2_est_pos = IMU_1_est_pos + l_2 / 2 * np.array([math.cos(q1_est + q2_est), 0, - math.sin(q1_est + q2_est)])
                 
-                #print (dir(data.site('stick_end')))
-                
-                """ draw_vector(viewer, 0, np.array(data.geom("propeller_body").xpos), blue_color, data.xfrc_applied[2][0:3], k_f * mujoco.mju_norm(data.xfrc_applied[2][0:3]))
-                draw_vector(viewer, 1, np.array(data.joint('pend_joint').xanchor), red_color, data.xfrc_applied[2][3:], k_f * mujoco.mju_norm(data.xfrc_applied[2][3:]))
-                draw_vector(viewer, 2, np.array(data.joint('pend_joint').xanchor), green_color, q_err[1:4]/math.sin(p_err/2), k_theta * p_err) """
-                #viewer.user_scn.ngeom = 3
                 mujoco.mjv_initGeom(viewer.user_scn.geoms[0],\
-                type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
-                pos = data.site("IMU_1_loc").xpos, mat = np.eye(3).flatten(), rgba = blue_color)
+                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
+                    pos = data.site("IMU_1_loc").xpos, mat = np.eye(3).flatten(), rgba = blue_color)
+                
                 mujoco.mjv_initGeom(viewer.user_scn.geoms[1],\
-                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .035 * np.ones(3),\
-                    pos = IMU_1_est_pos, mat = np.eye(3).flatten(), rgba = green_color)
+                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
+                    pos = data.site("IMU_2_loc").xpos, mat = np.eye(3).flatten(), rgba = yellow_color)
                 
-                
+                #goal position
                 mujoco.mjv_initGeom(viewer.user_scn.geoms[2],\
-                type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
-                pos = data.site("IMU_2_loc").xpos, mat = np.eye(3).flatten(), rgba = yellow_color)
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[3],\
-                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .035 * np.ones(3),\
-                    pos = IMU_2_est_pos, mat = np.eye(3).flatten(), rgba = cyan_color)
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .035 * np.ones(3),\
+                    pos = des_pos, mat = np.eye(3).flatten(), rgba = yellow_color)
+                
+                # mujoco.mjv_initGeom(viewer.user_scn.geoms[1],\
+                #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .035 * np.ones(3),\
+                #     pos = IMU_1_est_pos, mat = np.eye(3).flatten(), rgba = green_color)
+                
+                
+                
+                # mujoco.mjv_initGeom(viewer.user_scn.geoms[3],\
+                #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .035 * np.ones(3),\
+                #     pos = IMU_2_est_pos, mat = np.eye(3).flatten(), rgba = cyan_color)
             
                 
                 bar_rot = np.array([0, data.qpos[0] + data.qpos[1], 0])
                 
-                draw_vector_euler(viewer, 4, data.site("prop_1").xpos, red_color, k_f * data.actuator("propeller1").ctrl, bar_rot)
-                draw_vector_euler(viewer, 5, data.site("prop_2").xpos, red_color, k_f * data.actuator("propeller2").ctrl, bar_rot)
+                # draw_vector_euler(viewer, 4, data.site("prop_1").xpos, red_color, k_f * data.actuator("propeller1").ctrl, bar_rot)
+                # draw_vector_euler(viewer, 5, data.site("prop_2").xpos, red_color, k_f * data.actuator("propeller2").ctrl, bar_rot)
                 # draw_vector(viewer, 2, data.site("IMU_loc").xpos, red_color, appl_force, k_f * mujoco.mju_norm(appl_force))
                 
                 #control force
                 # draw_vector(viewer, 3, data.site("IMU_loc").xpos, cyan_color, cont_force, 5 * k_f * mujoco.mju_norm(cont_force))
                 
-                #goal position
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
-                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .035 * np.ones(3),\
-                    pos = des_pos, mat = np.eye(3).flatten(), rgba = yellow_color)
+                
                 
                 #COM position
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[7],\
-                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .035 * np.ones(3),\
-                    pos = c_t_est, mat = np.eye(3).flatten(), rgba = orange_color)
+                # mujoco.mjv_initGeom(viewer.user_scn.geoms[7],\
+                #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .035 * np.ones(3),\
+                #     pos = c_t_est, mat = np.eye(3).flatten(), rgba = orange_color)
                 
                 #virtual applied force
                 # draw_vector(viewer, 8, data.site("IMU_1_loc").xpos, white_color, appl_force,  k_f * mujoco.mju_norm(appl_force))
-                draw_vector(viewer, 8, data.site("IMU_1_loc").xpos, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
+                # draw_vector(viewer, 8, data.site("IMU_1_loc").xpos, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
                 
-                draw_vector_euler(viewer, 9, data.site("IMU_1_loc").xpos, green_color, 0.2, bar_rot)
+                # draw_vector_euler(viewer, 9, data.site("IMU_1_loc").xpos, green_color, 0.2, bar_rot)
                 
-                viewer.user_scn.ngeom =  10
+                viewer.user_scn.ngeom =  3
                 
-                """ print (I)
-                print (data.body("pendulum").cinert) """
+                
                 
                 #mujoco.mj_step(model, data)
                 
                 P = ekf_theta.P.copy()
                 p_diag = np.array([P[0, 0], P[1, 1], P[2, 2]]).reshape((3, 1))
                 
-                # if (p_diag[0] < P_threshold and p_diag[1] < P_threshold and p_diag[2] < P_threshold):
-                #     contr_act.append(1)
-                # else:
-                #     contr_act.append(0)
+                
                 
                 covar_values = np.append(covar_values, p_diag).reshape((3, -1))
                 
                 g = - model.opt.gravity[2]
                 
-                #F = np.eye(2) + dt * np.array([[0, 1], [(3 / 2) / l_2 * model.opt.gravity[2] * math.cos(ekf_theta.x[0]), 0]])
-                #print (ekf_theta.x)
+                
                 x = ekf_theta.x.copy()
                 # Fy = appl_force[2]
                 # Fx = appl_force[0]
                 I1, I2 = compute_inertias(x)
                 #I = I_const.copy()
-                """ Fy = 0
-                Fx = 0 """
+                
                 
                 #F = np.eye(2) + dt * np.array([[0, 1], [0, 0]])
                 F = np.eye(6) + dt * np.diag(np.array([1, 1, 0, 0]), 2)
                 
                 # print (F)
                 
-                F [2, 0] = l_1 * cos(x[0, 0]) * g * (x[4, 0] / 2 + x[5, 0])
-                F [2, 0]*= dt / I1 
+                # F [2, 0] = l_1 * cos(x[0, 0]) * g * (x[4, 0] / 2 + x[5, 0])
+                # F [2, 0]*= dt / I1 
                 
-                F [2, 1] = l_1 * cos(x[1, 0]) * (f1 + f2)
-                F [2, 1]*= dt / I1 
+                # F [2, 1] = l_1 * cos(x[1, 0]) * (f1 + f2)
+                # F [2, 1]*= dt / I1 
                 
-                # F [2, 4] = 3 / 2 * x[5] / l_1 * sin(x[0]) * g - 3 / l_1 * sin(x[1]) * (f1 + f2) - 3 / 2 * l_2 / (l_1**2) * (f1 - f2)
-                F [2, 4] = x[5, 0] * l_1 * sin(x[0, 0]) * g 
-                F [2, 4]+= l_1 * sin(x[1, 0]) * (f1 + f2)
-                F [2, 4]+= l_2 / 2 * (f1 - f2)
-                F [2, 4]*= - dt / (I1 * x[4, 0])             
+                # # F [2, 4] = 3 / 2 * x[5] / l_1 * sin(x[0]) * g - 3 / l_1 * sin(x[1]) * (f1 + f2) - 3 / 2 * l_2 / (l_1**2) * (f1 - f2)
+                # F [2, 4] = x[5, 0] * l_1 * sin(x[0, 0]) * g 
+                # F [2, 4]+= l_1 * sin(x[1, 0]) * (f1 + f2)
+                # F [2, 4]+= l_2 / 2 * (f1 - f2)
+                # F [2, 4]*= - dt / (I1 * x[4, 0])             
                 
-                F [2, 5] = l_1 * g * sin(x[0, 0])
-                F [2, 5]*= dt / I1
-                
-                
-                F [3, 0] = l_1 * cos(x[0, 0]) * g * (x[4, 0] / 2 + x[5, 0])
-                F [3, 0]*= - dt / I1
-                
-                F [3, 1] = l_1 * cos(x[1, 0 ]) * (f1 + f2)
-                F [3, 1]*= - dt / I1
-                
-                F [3, 4] = x[5, 0] * l_1 * g * sin(x[0, 0])
-                F [3, 4]+= l_1 * sin(x[1, 0]) * (f1 + f2)
-                F [3, 4]+= l_2 / (2 * x[4, 0]) * (f1 - f2)
-                F [3, 4]*= dt / I1
-                
-                F [3, 5] = l_1 / I1 * g * sin(x[0, 0]) 
-                F [3, 5]+= l_2 / (2 * x[5, 0] * I2) * (f1 - f2)
-                F [3, 5]*= - dt
+                # F [2, 5] = l_1 * g * sin(x[0, 0])
+                # F [2, 5]*= dt / I1
                 
                 
+                # F [3, 0] = l_1 * cos(x[0, 0]) * g * (x[4, 0] / 2 + x[5, 0])
+                # F [3, 0]*= - dt / I1
                 
+                # F [3, 1] = l_1 * cos(x[1, 0 ]) * (f1 + f2)
+                # F [3, 1]*= - dt / I1
                 
-                ekf_theta.F = F.copy()
+                # F [3, 4] = x[5, 0] * l_1 * g * sin(x[0, 0])
+                # F [3, 4]+= l_1 * sin(x[1, 0]) * (f1 + f2)
+                # F [3, 4]+= l_2 / (2 * x[4, 0]) * (f1 - f2)
+                # F [3, 4]*= dt / I1
+                
+                # F [3, 5] = l_1 / I1 * g * sin(x[0, 0]) 
+                # F [3, 5]+= l_2 / (2 * x[5, 0] * I2) * (f1 - f2)
+                # F [3, 5]*= - dt
                 
                 
                 
                 
-                B = np.zeros((6, 2))
-                
-                B [2, 0] = l_1 * sin(x[1, 0]) + l_2 / 2
-                B [2, 0]*= dt / I1
-                
-                B [2, 1] = l_1 * sin(x[1, 0]) - l_2 / 2
-                B [2, 1]*= dt / I1
+                # ekf_theta.F = F.copy()
                 
                 
-                B [3, 0] = - l_1 / I1 * sin(x[1, 0]) + (1 / I2 - 1 / I1) * l_2 / 2
-                B [3, 0]*= dt
                 
-                B [3, 1] = - l_1 / I1 * sin(x[1, 0]) - (1 / I2 - 1 / I1) * l_2 / 2
-                B [3, 1]*= dt
                 
-                ekf_theta.B = B.copy()
+                # B = np.zeros((6, 2))
                 
-                f_u = np.array([f1, f2]).reshape((-1, 1))
+                # B [2, 0] = l_1 * sin(x[1, 0]) + l_2 / 2
+                # B [2, 0]*= dt / I1
                 
-                ekf_theta.predict(f_u)
+                # B [2, 1] = l_1 * sin(x[1, 0]) - l_2 / 2
+                # B [2, 1]*= dt / I1
                 
-                #if (ekf_count == 0) and False:
-                if (ekf_count == 0): 
+                
+                # B [3, 0] = - l_1 / I1 * sin(x[1, 0]) + (1 / I2 - 1 / I1) * l_2 / 2
+                # B [3, 0]*= dt
+                
+                # B [3, 1] = - l_1 / I1 * sin(x[1, 0]) - (1 / I2 - 1 / I1) * l_2 / 2
+                # B [3, 1]*= dt
+                
+                # ekf_theta.B = B.copy()
+                
+                # f_u = np.array([f1, f2]).reshape((-1, 1))
+                
+                # ekf_theta.predict(f_u)
+                
+                if (ekf_count == 0) and False:
+                # if (ekf_count == 0): 
                                                             
                     
                     mujoco.mj_forward(model, data)
@@ -1093,17 +1078,17 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                     # h_est = h_x(ekf_theta.x, f1, f2)
                     h_est = h_x(ekf_theta.x)
                     
-                    ekf_theta.update(z = z, HJacobian = H_jac, Hx = h_x)
+                    # ekf_theta.update(z = z, HJacobian = H_jac, Hx = h_x)
                 
-                z_sim = compute_z(data, sim_state)
-                sim_meas = np.append(sim_meas, z_sim.reshape((-1, 1)), axis = 1)
-                # est_meas = np.append(est_meas, h_x(ekf_theta.x).reshape((-1, 3)), axis = 0)
-                # est_meas = np.append(est_meas, h_x(sim_state).reshape((-1, 1)), axis = 1)
-                est_meas = np.append(est_meas, h_est.reshape((-1, 1)), axis = 1)
+                # z_sim = compute_z(data, sim_state)
+                # sim_meas = np.append(sim_meas, z_sim.reshape((-1, 1)), axis = 1)
+                # # est_meas = np.append(est_meas, h_x(ekf_theta.x).reshape((-1, 3)), axis = 0)
+                # # est_meas = np.append(est_meas, h_x(sim_state).reshape((-1, 1)), axis = 1)
+                # est_meas = np.append(est_meas, h_est.reshape((-1, 1)), axis = 1)
                 
                 
-                f1_story.append(f1)
-                f2_story.append(f2)
+                # f1_story.append(f1)
+                # f2_story.append(f2)
                 
                 ekf_count = (ekf_count + 1) % count_max
                 
