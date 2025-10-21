@@ -45,7 +45,7 @@ def quat2eul(quat, eul):
     eul[1] = 2 * math.atan2(math.sqrt(1 + 2 * (qw * qy - qx * qz)), math.sqrt (1 - 2 * (qw * qy - qx * qz))) - math.pi / 2
     eul[2] = math.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy**2 + qz**2))   
 
-model = mujoco.MjModel.from_xml_path ("models/floating_base.xml")
+model = mujoco.MjModel.from_xml_path ("models/floating_enc.xml")
 #model.opt.timestep = 0.002
 #model = mujoco.MjModel.from_xml_path ("tutorial_models/3D_pendulum_actuator.xml")
 #model.opt.integrator = mujoco.mjtIntegrator.mjINT_RK4
@@ -269,14 +269,9 @@ contr_act = []
 # meas_diff = np.zeros((3, 0))
 # sim_meas = np.zeros((0, 6))
 # est_meas = np.zeros((0, 6))
-sim_meas = np.zeros((6, 0))
-est_meas = np.zeros((6, 0))
+sim_meas = np.zeros((4, 0))
+est_meas = np.zeros((4, 0))
 covar_values = np.zeros((3, 0))
-
-
-ext_force = np.zeros((model.nbody, 6))
-ext_force [1][2] = 1 #vertical force
-
 
 
 id_mat = np.eye(3)
@@ -333,7 +328,7 @@ dt = model.opt.timestep
 random.seed(time.time())
 
 
-ekf_theta = Modif_EKF(8, 6, 2)
+ekf_theta = Modif_EKF(8, 4, 2)
 
 
 ekf_theta.x [0, 0] = data.qpos[0].copy()
@@ -367,18 +362,15 @@ init_noise = np.array([0.05, 0.05, 0.02, 0.02, 0.01, 0.01, 0.02, 0.02])
 var_gyro_1 = model.sensor("IMU_1_gyro").noise
 var_acc_1 = model.sensor("IMU_1_acc").noise
 
-var_gyro_2 = model.sensor("IMU_2_gyro").noise
-var_acc_2 = model.sensor("IMU_2_acc").noise
+var_enc = model.sensor("enc").noise
 
 
-R = np.zeros((6, 6))
+R = np.zeros((4, 4))
 R [0, 0] = var_gyro_1
 R [1, 1] = var_acc_1
 R [2, 2] = var_acc_1
 
-R [3, 3] = var_gyro_2
-R [4, 4] = var_acc_2
-R [5, 5] = var_acc_2
+R [3, 3] = var_enc
 
 # R *= 0.8
 # R*= 0.001
@@ -405,49 +397,22 @@ ekf_theta.P = np.diag(init_noise)
 
 
 # control params
-I_b, I_l1 = compute_inertias(ekf_theta.x)
-
-freq_COM = 2
-csi_COM = 1
-
-freq_theta = 300
-csi_theta = 20
-
-freq_alpha_1 = 10
-csi_alpha_1 = 2
-
-k_err_COM = freq_COM**2 * m_tot
-k_v_COM = 2 * csi_COM * freq_COM * m_tot
-
-k_err_theta = freq_theta**2 * I_b
-k_v_theta = 2 * csi_theta * freq_theta * I_b
-
-K_err_alpha_1 = freq_alpha_1**2 * I_l1
-k_v_alpha_1 = 2 * csi_alpha_1 * freq_alpha_1 * I_l1
-
-
 
 gamma_v = 1
 
 gamma_acc = 4
 
-gamma_w_b = 12
+gamma_w_b = 4
 
-gamma_acc_b = 32
+gamma_acc_b = 8
 
-# gamma_w_1 = 1
-gamma_w_1 = 2
+gamma_w_1 = 1
 
-# gamma_acc_1 = 3
-gamma_acc_1 = 8
-# gamma_acc_1 = 0
+gamma_acc_1 = 3
 
 max_vel = 0.4
 
 max_w = 1
-
-# print (k_err_theta, k_v_theta)
-# print (gamma_w_b * gamma_acc_b, gamma_acc_b)
 
 # des_pos = np.zeros(3)
 
@@ -462,22 +427,9 @@ start_des_pos = np.array([0.05, 0, 0.7])
 # des_pos = np.zeros((3, 1))
 # des_pos = l_des * np.array([sin(des_angle), 0, cos(des_angle)]).reshape((3, 1))
 # des_pos = np.array([0.2, 0, 0.8]).reshape((-1, 1))
-des_r = 0.1
-# des_r = 0
+# des_r = 0.1
+des_r = 0
 
-# k1 = 0.5
-# k1 = 2
-k1 = 1
-# k2 = 1.5
-
-
-# des_pos = start_des_pos.copy().reshape((-1, 1))
-# des_pos+= np.array([des_r * sin(k1 * data.time), 0, - des_r * cos(k1 * data.time)]).reshape((-1, 1))
-
-# # print (des_pos)
-
-# des_vel = np.zeros((3, 1))
-# des_vel+= k1 * np.array([des_r * cos(k1 * data.time), 0, des_r * sin(k1 * data.time)]).reshape((-1, 1))
 
 # print (des_pos)
 
@@ -587,6 +539,8 @@ def control_callback (model, data):
     
     # des_pos = l_des * np.array([sin(des_angle), 0, cos(des_angle)]).reshape((3, 1))
     
+    k1 = 0.5
+    k2 = 1.5
     des_pos = start_des_pos.copy().reshape((-1, 1))
     des_pos+= np.array([des_r * sin(k1 * data.time), 0, - des_r * cos(k1 * data.time)]).reshape((-1, 1))
     
@@ -594,10 +548,6 @@ def control_callback (model, data):
     
     des_vel = np.zeros((3, 1))
     des_vel+= k1 * np.array([des_r * cos(k1 * data.time), 0, des_r * sin(k1 * data.time)]).reshape((-1, 1))
-    
-    des_acc = np.zeros((3, 1))
-    des_acc+= k1**2 * des_r * np.array([- sin(k1 * data.time), 0, cos(k1 * data.time)]).reshape((-1, 1))
-    
 
     # curr_pos = l_1 * np.array([sin(x1), 0, cos(x1)]).reshape((3, 1)) * (x5/2 + x6) / (x5 + x6)
     # curr_vel = l_1 * x3 * (x5/2 + x6) / (x5 + x6) * np.array([cos(x1), 0, -sin(x1)]).reshape((3, 1))
@@ -616,27 +566,17 @@ def control_callback (model, data):
     COM_pos = np.append(COM_pos, curr_pos.reshape((-1, 1)), axis = 1)
     COM_vel = np.append(COM_vel, curr_vel.reshape((-1, 1)), axis = 1)
     
-    # ref_vel = gamma_v * (des_pos - curr_pos)
-    # ref_vel += des_vel
+    ref_vel = gamma_v * (des_pos - curr_pos)
+    ref_vel += des_vel
     
-    # ref_vel_max = np.linalg.norm(ref_vel)
-    # if ref_vel_max > max_vel:
-    #     ref_vel*= max_vel / ref_vel_max
+    ref_vel_max = np.linalg.norm(ref_vel)
+    if ref_vel_max > max_vel:
+        ref_vel*= max_vel / ref_vel_max
         
-    # goal_pos = np.append(goal_pos, des_pos.reshape((-1, 1)), axis = 1)
-    # goal_vel = np.append(goal_vel, ref_vel.reshape((-1, 1)), axis = 1)
-    
-    # ref_acc = gamma_acc * (ref_vel - curr_vel)
-    
-    COM_err = curr_pos - des_pos
-    COM_v_err = curr_vel - des_vel
-    
     goal_pos = np.append(goal_pos, des_pos.reshape((-1, 1)), axis = 1)
-    goal_vel = np.append(goal_vel, des_vel.reshape((-1, 1)), axis = 1)
+    goal_vel = np.append(goal_vel, ref_vel.reshape((-1, 1)), axis = 1)
     
-    ref_acc = k_v_COM * COM_v_err + k_err_COM * COM_err
-    ref_acc*= -1
-    ref_acc+= des_acc
+    ref_acc = gamma_acc * (ref_vel - curr_vel)
     
     com_cont_force = m_tot * ref_acc
     # com_cont_force*= 0
@@ -653,29 +593,24 @@ def control_callback (model, data):
     
     des_a1 = x3
     
-    # ref_w_1 = gamma_w_1 * (des_a1 - x4)
+    ref_w_1 = gamma_w_1 * (des_a1 - x4)
     
-    # ref_w1_max = np.linalg.norm(ref_w_1)
-    # if ref_w1_max > max_w:
-    #     ref_w_1*= max_w / ref_w1_max
+    ref_w1_max = np.linalg.norm(ref_w_1)
+    if ref_w1_max > max_w:
+        ref_w_1*= max_w / ref_w1_max
         
-    # goal_alpha_1.append(des_a1)
-    # goal_w_1.append(ref_w_1)
+    goal_alpha_1.append(des_a1)
+    goal_w_1.append(ref_w_1)
     
-    # ref_a_1 = gamma_acc_1 * (ref_w_1 - x8) 
+    ref_a_1 = gamma_acc_1 * (ref_w_1 - x8) 
     
-    ref_a_1 = k_v_alpha_1 * (x7 - x8) + K_err_alpha_1 * (des_a1 - x4)
-    # ref_a_1*= 0
     # f_a1 = I_l1 / l_l1 * m_tot / m_l1 * ref_a_1
     
     des_M_1 = I_l1 * ref_a_1
     
-    goal_alpha_1.append(des_a1.copy())
-    goal_w_1.append(x7.copy())
-    
     # a1_cont_force = des_M_1 / l_l1 * m_tot / m_l1 * np.array([cos(x4), 0, -sin(x4)]).reshape((-1, 1))
     a1_cont_force = des_M_1 / l_l1 * np.array([cos(x4), 0, -sin(x4)]).reshape((-1, 1))
-    # a1_cont_force*= -1
+    a1_cont_force*= -1
     
     # a1_cont_force*= 0
     
@@ -707,17 +642,17 @@ def control_callback (model, data):
     # prop_angle.append(curr_prop_angle)
     # prop_w.append(curr_prop_w)
     
-    # ref_w = gamma_w_b * (des_prop_angle - x3)
-    # ref_w_max = np.linalg.norm(ref_w)
-    # if ref_w_max > max_w:
-    #     ref_w*= max_w / ref_w_max
+    ref_w = gamma_w_b * (des_prop_angle - x3)
+    ref_w_max = np.linalg.norm(ref_w)
+    if ref_w_max > max_w:
+        ref_w*= max_w / ref_w_max
         
-    # goal_theta.append(des_prop_angle)
-    # goal_w_b.append(ref_w)
+    goal_theta.append(des_prop_angle)
+    goal_w_b.append(ref_w)
     
-    # ang_err = ref_w - x7
+    ang_err = ref_w - x7
     
-    # ref_acc_b = gamma_acc_b * ang_err
+    ref_acc_b = gamma_acc_b * ang_err
     # ref_acc_b*= -1
     
     # ref_moment = ref_acc_b
@@ -725,12 +660,6 @@ def control_callback (model, data):
     # ref_moment*= I2
     # ref_moment*=  
     # ref_moment*= -1
-    
-    
-    ref_acc_b = k_v_theta * (0 - x7) + k_err_theta * (des_prop_angle - x3)
-    
-    goal_theta.append(des_prop_angle)
-    goal_w_b.append(0)
     
     rot_int = ref_acc_b * I_b / l_b
     
@@ -773,9 +702,7 @@ def kb_callback(keycode):
     if chr(keycode) == 'S':
         global step
         step = not step
-    """ if chr(keycode) == 'F':
-        global appl_force
-        appl_force = not appl_force """
+
         
 #x = np.zeros(6)
 # def h_x (x, f1, f2):
@@ -803,7 +730,7 @@ def h_x (x):
     
     
     
-    H = np.zeros ((6, 1))
+    H = np.zeros ((4, 1))
     
     I_b, I_l1 = compute_inertias(x)
     
@@ -840,21 +767,8 @@ def h_x (x):
     
     H [2] = z1_acc
     H [2]+= prop_acc_z
-      
-    H [3] = x8
     
-    H [4] = x8**2 * sin(x4)
-    # H [4] = - x8**2 * sin(x4)
-    # H [4] = 0
-    H [4]-= alpha_1_acc * cos(x4)
-    # H [4]+= alpha_1_acc * cos(x4)
-    H [4]*= l_l1 / 2 
-    H [4]+= x1_acc
-    
-    H [5] = x8**2 * cos(x4)
-    H [5]+= alpha_1_acc * sin(x4)
-    H [5]*= l_l1 / 2 
-    H [5]+= z1_acc
+    H [3] = x4 - x3
     
     # H [4]+= H[1]
     # H [5]+= H[2]
@@ -894,7 +808,7 @@ def H_jac (x):
     # est_l2 = x6
 
     # H = np.zeros((6, 4))
-    H = np.zeros((6, 8))
+    H = np.zeros((4, 8))
     # H_test = np.zeros((3, 4))
     
     I_b, I_l1 = compute_inertias(x)
@@ -926,31 +840,8 @@ def H_jac (x):
     H [2, 7] = - m_l1 / m_tot * l_l1 * x8 * cos(x4)
     
     
-    H [3, 7] = 1
-    
-    
-    H [4, 2] = -l_l1 / 2 * d_a3 * cos(x4)
-    
-    H [4, 3] = x8**2 + d_a3
-    H [4, 3]*= cos(x4)
-    H [4, 3]+= alpha_1_acc * sin(x4)
-    H [4, 3]*= l_l1 / 2
-    
-    
-    H [4, 7] = l_l1 * x8 * sin(x4)
-    
-    
-    H [5, 2] = l_l1 / 2 * d_a3 * sin(x4)
-    
-    H [5, 3] = x8**2 + d_a3
-    H [5, 3]*= - sin(x4)
-    H [5, 3]+= alpha_1_acc * cos(x4)
-    H [5, 3]*= l_l1 / 2
-    
-    H [5, 7] = l_l1 * x8 * cos(x4)
-    
-    H [4, :]+= H [1, :]
-    H [5, :]+= H [2, :]
+    H [3, 2] = - 1
+    H [3, 3] = 1
     
     
     H [1, 2]+= l_b / 2 * (- theta_acc * cos(x3) + x7**2 * sin(x3))
@@ -967,28 +858,25 @@ def compute_z (data, x):
                 
     acc_data_1 = data.sensor ("IMU_1_acc").data.copy()
     
-    ang_data_2 = data.sensor("IMU_2_gyro").data[1].copy()
-    
-    acc_data_2 = data.sensor("IMU_2_acc").data.copy()
+    enc_data = data.sensor("enc").data[0].copy()
     
     # print (acc_data, data.cacc[1])
     
     
     
+    # ang_data_1 += random.gauss(0, model.sensor("IMU_1_gyro").noise[0])
+    # for i in range (0, 3):
+    #     acc_data_1 [i] += random.gauss(0, model.sensor("IMU_1_acc").noise[0])
     
-    ang_data_1 += random.gauss(0, model.sensor("IMU_1_gyro").noise[0])
-    for i in range (0, 3):
-        acc_data_1 [i] += random.gauss(0, model.sensor("IMU_1_acc").noise[0])
-    
-    ang_data_2 += random.gauss(0, model.sensor("IMU_2_gyro").noise[0])
-    for i in range (0, 3):
-        acc_data_2 [i] += random.gauss(0, model.sensor("IMU_2_acc").noise[0])
+    # ang_data_2 += random.gauss(0, model.sensor("IMU_2_gyro").noise[0])
+    # for i in range (0, 3):
+    #     acc_data_2 [i] += random.gauss(0, model.sensor("IMU_2_acc").noise[0])
     
     bar_eul = np.zeros(3)
     quat2eul(data.qpos[3:7], bar_eul)
     q_est_1 = bar_eul[1]
     
-    q_est_2 = data.qpos[7] + bar_eul[1]
+    # q_est_2 = data.qpos[7] + bar_eul[1]
     # q_est_2 = data.qpos[7]
     
     
@@ -996,23 +884,23 @@ def compute_z (data, x):
     
     R1 = np.array([[math.cos(q_est_1), 0, math.sin(q_est_1)], [0, 1, 0], [-math.sin(q_est_1), 0, math.cos(q_est_1)]])
     
-    R2 = np.array([[math.cos(q_est_2), 0, math.sin(q_est_2)], [0, 1, 0], [-math.sin(q_est_2), 0, math.cos(q_est_2)]])
+    # R2 = np.array([[math.cos(q_est_2), 0, math.sin(q_est_2)], [0, 1, 0], [-math.sin(q_est_2), 0, math.cos(q_est_2)]])
     
     
     mujoco.mju_mulMatVec (acc_data_1, R1, acc_data_1.copy())
     
-    mujoco.mju_mulMatVec (acc_data_2, R2, acc_data_2.copy())
+    # mujoco.mju_mulMatVec (acc_data_2, R2, acc_data_2.copy())
     
     
     
     
     acc_data_1 += model.opt.gravity
-    acc_data_2 += model.opt.gravity
+    # acc_data_2 += model.opt.gravity
     
     # acc_data_2 -= acc_data_1    
     
     
-    z = np.array([ang_data_1, acc_data_1[0], acc_data_1[2], ang_data_2, acc_data_2[0], acc_data_2[2]])
+    z = np.array([ang_data_1, acc_data_1[0], acc_data_1[2], enc_data])
     
     
     return z.reshape((-1, 1))
@@ -1026,7 +914,7 @@ f_u = np.zeros(2).reshape(-1, 1)
 with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as viewer:
     
     viewer.lock()
-    
+
     # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_SITE
     
     #print (int(mujoco.mjtFrame.mjFRAME_BODY), int(mujoco.mjtFrame.mjFRAME_GEOM), int(mujoco.mjtFrame.mjFRAME_SITE))
@@ -1057,8 +945,6 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
     #bar orientation
     mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
     
-    
-    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
     #print ('simulation setup completed')
     viewer.sync()
     
@@ -1077,13 +963,6 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
         if not pause or step:
             step = False
             with viewer.lock():
-                # des_pos = start_des_pos.copy().reshape((-1, 1))
-                # des_pos+= np.array([des_r * sin(k1 * data.time), 0, - des_r * cos(k1 * data.time)]).reshape((-1, 1))
-                
-                # # print (des_pos)
-                
-                # des_vel = np.zeros((3, 1))
-                # des_vel+= k1 * np.array([des_r * cos(k1 * data.time), 0, des_r * sin(k1 * data.time)]).reshape((-1, 1))
                 # mujoco.mj_step(model, data)
                 # mujoco.mj_forward(model, data)
                 
@@ -1143,26 +1022,22 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                 
                 
                 
-                # mujoco.mjv_initGeom(viewer.user_scn.geoms[3],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = C_b_est, mat = np.eye(3).flatten(), rgba = transp_green_color)
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[3],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = C_b_est, mat = np.eye(3).flatten(), rgba = transp_green_color)
                 
-                # mujoco.mjv_initGeom(viewer.user_scn.geoms[4],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = p_prop_2, mat = np.eye(3).flatten(), rgba = cyan_color)
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[4],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = p_prop_2, mat = np.eye(3).flatten(), rgba = cyan_color)
                 
                 #COM position
-                # mujoco.mjv_initGeom(viewer.user_scn.geoms[5],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_orange_color)
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[5],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_orange_color)
                 
-                # mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = C_t_est, mat = np.eye(3).flatten(), rgba = transp_blue_color)
-                
-                
-                
-                
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = C_t_est, mat = np.eye(3).flatten(), rgba = transp_blue_color)
                 # mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
                 #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
                 #     pos = C_t_sim, mat = np.eye(3).flatten(), rgba = green_color)
@@ -1187,19 +1062,19 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                 # draw_vector(viewer, 7, C_t_est, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
                 draw_vector(viewer, 7, C_b_sim, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
                 
-                draw_vector(viewer, 8, C_b_sim, blue_color, a1_cont_force,  30 * k_f * mujoco.mju_norm(a1_cont_force))
+                # draw_vector(viewer, 8, C_b_sim, blue_color, a1_cont_force,  30 * k_f * mujoco.mju_norm(a1_cont_force))
                 
-                draw_vector(viewer, 9, C_b_sim, green_color, com_cont_force,  30 * k_f * mujoco.mju_norm(com_cont_force))
+                # draw_vector(viewer, 9, C_b_sim, green_color, com_cont_force,  30 * k_f * mujoco.mju_norm(com_cont_force))
                 
                 # draw_vector_euler(viewer, 9, C_b_sim, green_color, 0.2, bar_rot)
                 
                 
                 # print (COM_pos[:, -1])
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[10],\
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[8],\
                     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
                     pos = data.subtree_com[0], mat = np.eye(3).flatten(), rgba = red_color)
                 
-                viewer.user_scn.ngeom =  11
+                viewer.user_scn.ngeom =  9
                 
                 
                 
@@ -1406,10 +1281,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
 # csv_name = os.path.realpath(__file__) + 'data_to_plot/case_1_unc_l_data.csv'
 
 # print (len(alignment_story))
-
-print (len(sim_time))
-print (COM_vel.size)
-csv_name = './data_to_plot/flying_cont_data.csv'
+csv_name = './data_to_plot/flying_enc_data.csv'
 
 with open(csv_name, 'w', newline = '') as csvfile:
     data_writer = csv.writer(csvfile)

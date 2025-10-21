@@ -49,10 +49,9 @@
         <accelerometer name = "IMU_1_acc" site = "IMU_1_loc" noise = ".01"/>
         <gyro name = "IMU_1_gyro" site = "IMU_1_loc" noise = ".01"/>
 
-        <accelerometer name = "IMU_2_acc" site = "IMU_2_loc" noise = ".01"/>
-        <gyro name = "IMU_2_gyro" site = "IMU_2_loc" noise = ".01"/>
-        <!-- <accelerometer name = "IMU_acc" site = "IMU_loc" noise = "0"/>
-        <gyro name = "IMU_gyro" site = "IMU_loc" noise = "0"/> -->
+        <!-- <accelerometer name = "IMU_2_acc" site = "IMU_2_loc" noise = ".01"/>
+        <gyro name = "IMU_2_gyro" site = "IMU_2_loc" noise = ".01"/> -->
+        <jointpos name = "enc" joint = "leg_1_joint" noise = ".01"/>
     </sensor>
     
 </mujoco>
