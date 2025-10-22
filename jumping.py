@@ -1,22 +1,27 @@
 import mujoco
-import mediapy
-from IPython import display
-from IPython.display import clear_output
+#import mediapy
+#from IPython import display
+#from IPython.display import clear_output
 import mujoco.viewer
 import time
 import numpy as np
-from matplotlib import pyplot as plt
-import itertools
+#from matplotlib import pyplot as plt
+#import itertools
 import math
 from math import sin, cos
 import random
 from filterpy.kalman import ExtendedKalmanFilter
 from filterpy.common import Q_discrete_white_noise
 import csv
-import os
+#import os
 
+
+
+# print ("test")
+# test = np.array([0, 0, 0])
 # print (dir(mujoco))
 # print(mujoco.__version__)
+# print ("creating ekf class")
 
 class Modif_EKF(ExtendedKalmanFilter):
     def __init__(self, dim_x, dim_z, dim_u = 0):
@@ -59,12 +64,14 @@ def quat2eul(quat, eul):
     eul[2] = math.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy**2 + qz**2))   
 
 
-
+# print ("creating model and data")
 model = mujoco.MjModel.from_xml_path ("models/jumping.xml")
 #model.opt.timestep = 0.002
 #model = mujoco.MjModel.from_xml_path ("tutorial_models/3D_pendulum_actuator.xml")
 #model.opt.integrator = mujoco.mjtIntegrator.mjINT_RK4
 data = mujoco.MjData(model)
+
+# print ("model and data created")
 
 # print (dir(model.geom("propeller_body")))
 # print (dir(data.body("prop_bar")))
@@ -96,7 +103,7 @@ data.qpos[7] = start_alpha_1
 
 # data.qpos[:3] = start_pos.copy().reshape((-1, 1))
 for k in range(0, 3):
-    data.qpos[k] = start_pos[k].copy()
+    data.qpos[k] = start_pos[k, 0].copy()
 # data.qpos[2] = 0.6
 
 # print (data.qpos)
@@ -469,11 +476,11 @@ init_noise = np.array([0.05, 0.05, 0.02, 0.02, 0.01, 0.01, 0.02, 0.02])
 
 
 
-var_gyro_1 = model.sensor("IMU_1_gyro").noise
-var_acc_1 = model.sensor("IMU_1_acc").noise
+var_gyro_1 = model.sensor("IMU_1_gyro").noise[0]
+var_acc_1 = model.sensor("IMU_1_acc").noise[0]
 
-var_gyro_2 = model.sensor("IMU_2_gyro").noise
-var_acc_2 = model.sensor("IMU_2_acc").noise
+var_gyro_2 = model.sensor("IMU_2_gyro").noise[0]
+var_acc_2 = model.sensor("IMU_2_acc").noise[0]
 
 
 R = np.zeros((6, 6))
@@ -485,15 +492,15 @@ R [3, 3] = var_gyro_2
 R [4, 4] = var_acc_2
 R [5, 5] = var_acc_2
 
-var_gps = model.sensor("gps").noise
+var_gps = model.sensor("gps").noise[0]
 R_gps = np.zeros((2, 2))
 R_gps [0, 0] = var_gps
 R_gps [1, 1] = var_gps
 # print (R_gps)
 
 R_vel = np.zeros((2, 2))
-R_vel [0, 0] = model.sensor("gps_vel").noise
-R_vel [1, 1] = model.sensor("gps_vel").noise
+R_vel [0, 0] = model.sensor("gps_vel").noise[0]
+R_vel [1, 1] = model.sensor("gps_vel").noise[0]
 
 # R *= 0.8
 # R*= 0.001
@@ -1471,25 +1478,29 @@ def draw_trajectory(viewer, start_pos, vx, vz0, a, t, t_inc, traj_color):
     
     return next_traj_pos[2]
    
-model.vis.scale.contactheight = 100
-# model.vis.scale.forcewidth = 10
+model.vis.scale.contactheight = 1
+model.vis.scale.forcewidth = 0.02
 # model.vis.scale.forceheight = 10
 # print (model.vis.scale.contactheight)
 # print (model.vis.scale.forcewidth)
 # mujoco.mj_forward(model, data)
+
+model.vis.map.force = 0.2
 
 cont_forces = np.zeros(6)
         
 # print ("starting viewer")
 # print (model.opt.timestep)
 # try:
-with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as viewer:
+# with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as viewer:
+with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_left_ui = False, show_right_ui = False) as viewer:
     
     viewer.lock()
     # print ("viewer launched")
-    # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_CONTACT
+    viewer.opt.frame = mujoco.mjtFrame.mjFRAME_CONTACT
     # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_WORLD
     # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_SITE
+    # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_GEOM
     
     viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = True
     viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTSPLIT] = True
@@ -1572,8 +1583,11 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                 # print (data.qpos)
                 # data.qvel[6] = 0
                 # mujoco.mj_step(model, data)
-                f1 = data.actuator("propeller1").ctrl.copy()
-                f2 = data.actuator("propeller2").ctrl.copy()
+                # f1 = data.actuator("propeller1").ctrl.copy()
+                # f2 = data.actuator("propeller2").ctrl.copy()
+                f1 = data.actuator("propeller1").ctrl[0]
+                f2 = data.actuator("propeller2").ctrl[0]
+                # print(f1, f2)
                 mujoco.mj_forward(model, data)
                 # f1 = data.actuator("propeller1").ctrl.copy()
                 # f2 = data.actuator("propeller2").ctrl.copy()
@@ -1584,14 +1598,18 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                 # print (data.time)
                 
                 
-                for i, cont in enumerate(data.contact):
-                    # print(dir(cont))
-                    # print (dir(cont.geom[0]))
-                    # if cont.geom[0] == data.geom("leg_1_stick").id or cont.geom[1] == data.geom("leg_1_stick").id:
-                    if data.geom("leg_1_stick").id in cont.geom:
-                        mujoco.mj_contactForce(model, data, i, cont_forces)
-                        print (cont_forces)
-                        # break
+                # for i, cont in enumerate(data.contact):
+                #     # print(dir(cont))
+                #     # print (dir(cont.geom[0]))
+                #     # if cont.geom[0] == data.geom("leg_1_stick").id or cont.geom[1] == data.geom("leg_1_stick").id:
+                #     # if data.geom("leg_1_stick").id in cont.geom:
+                #     if data.geom("floor").id in cont.geom:
+                #         mujoco.mj_contactForce(model, data, i, cont_forces)
+                #         print (cont_forces)
+                #         print (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[0]),\
+                #                 mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[1]))
+                #         # print (cont_forces[0] / cont_forces [1])
+                #         # break
             
 
                 # print (z_sim.reshape((1, -1)))
@@ -1687,7 +1705,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                 # alpha_1 = ekf_theta.x[3, 0]
                 
                 # print (calc_x1_acc, calc_z1_acc, calc_alpha_1_acc, alpha_1_vel, alpha_1)
-                curr_acc = np.array([calc_x1_acc[0], 0, calc_z1_acc[0]]).reshape((-1, 1)) + m_l1 / m_tot * l_l1 / 2 * (alpha_1_vel**2 * np.array([sin(alpha_1), 0, cos(alpha_1)]).reshape((-1, 1)) + calc_alpha_1_acc[0] * np.array([-cos(alpha_1), 0, sin(alpha_1)]).reshape((-1, 1)))
+                curr_acc = np.array([calc_x1_acc, 0, calc_z1_acc]).reshape((-1, 1)) + m_l1 / m_tot * l_l1 / 2 * (alpha_1_vel**2 * np.array([sin(alpha_1), 0, cos(alpha_1)]).reshape((-1, 1)) + calc_alpha_1_acc * np.array([-cos(alpha_1), 0, sin(alpha_1)]).reshape((-1, 1)))
                 
                 COM_acc = np.append(COM_acc, curr_acc.reshape((-1, 1)), axis = 1)
                 
