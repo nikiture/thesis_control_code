@@ -29,60 +29,75 @@ class Modif_EKF(ExtendedKalmanFilter):
         super().__init__(dim_x, dim_z, dim_u)
     def predict_x(self, u = np.zeros((2, 1))):
 
-        dx5, dx6, dx7, dx8 = compute_accelerations(self.x, u)
-            
-        # print (dx3, dx4)
-        
-        dxa = dt * np.array([0, 0, 0, 0, dx5, dx6, dx7, dx8]).reshape((-1, 1))
-        # dxa = dt * np.array([0, 0, 0, 0, dx5, dx6, dx7, dx8, 0]).reshape((-1, 1))        
-        
-        self.x += dxa
-        
-        x = self.x
-        
-        dxb = dt * np.array([x[4, 0], x[5, 0], x[6, 0], x[7, 0], 0, 0, 0, 0]).reshape((-1, 1))
-        # dxb = dt * np.array([x[4, 0], x[5, 0], x[6, 0], x[7, 0], 0, 0, 0, 0, 0]).reshape((-1, 1)) 
-        
-        self.x += dxb
-        
-        # if data.sensor("feet_touch_sensor").data[0]<0.01 or (not ground_model_comp):
-        #     dx5, dx6, dx7, dx8 = compute_accelerations(self.x, u)
-            
-        #     # print (dx3, dx4)
-            
-        #     dxa = dt * np.array([0, 0, 0, 0, dx5, dx6, dx7, dx8]).reshape((-1, 1))
-        #     # dxa = dt * np.array([0, 0, 0, 0, dx5, dx6, dx7, dx8, 0]).reshape((-1, 1))        
-            
-        #     self.x += dxa
-            
-        #     x = self.x
-            
-        #     dxb = dt * np.array([x[4, 0], x[5, 0], x[6, 0], x[7, 0], 0, 0, 0, 0]).reshape((-1, 1))
-        #     # dxb = dt * np.array([x[4, 0], x[5, 0], x[6, 0], x[7, 0], 0, 0, 0, 0, 0]).reshape((-1, 1)) 
-            
-        #     self.x += dxb
-            
-        #     # dxc = dt**2 / 2 * np.array([dx5, dx6, dx7, dx8, 0, 0, 0, 0]).reshape((-1, 1)) 
-            
-        #     # self.x+= dxc
-            
-        #     # dx = dt * np.array([x[4, 0], x[5, 0], x[6, 0], x[7, 0], dx5, dx6, dx7, dx8]).reshape((-1, 1))
-            
-        #     # self.x += dx
-        # else:
-        #     _, _, dx7, dx8 = compute_accelerations(self.x, u)
+        # dx5, dx6, dx7, dx8 = compute_accelerations(self.x, u)
 
-        #     dxa = dt * np.array([0, 0, 0, 0, 0, 0, dx7, dx8]).reshape((-1, 1))
+            
+        # # print (dx3, dx4)
+        
+        # dxa = dt * np.array([0, 0, 0, 0, dx5, dx6, dx7, dx8]).reshape((-1, 1))
+        # # dxa = dt * np.array([0, 0, 0, 0, dx5, dx6, dx7, dx8, 0]).reshape((-1, 1))        
+        
+        # self.x += dxa
+        
+        # x = self.x
+        
+        # dxb = dt * np.array([x[4, 0], x[5, 0], x[6, 0], x[7, 0], 0, 0, 0, 0]).reshape((-1, 1))
+        # # dxb = dt * np.array([x[4, 0], x[5, 0], x[6, 0], x[7, 0], 0, 0, 0, 0, 0]).reshape((-1, 1)) 
+        
+        # self.x += dxb
+        
+        if data.sensor("feet_touch_sensor").data[0]<0.01 or (not ground_model_comp):
+            dx5, dx6, dx7, dx8 = compute_accelerations(self.x, u)
+            
+            # print (dx3, dx4)
+            
+            dxa = dt * np.array([0, 0, 0, 0, dx5, dx6, dx7, dx8]).reshape((-1, 1))
+            # dxa = dt * np.array([0, 0, 0, 0, dx5, dx6, dx7, dx8, 0]).reshape((-1, 1))        
+            
+            self.x += dxa
+            
+            x = self.x
+            
+            dxb = dt * np.array([x[4, 0], x[5, 0], x[6, 0], x[7, 0], 0, 0, 0, 0]).reshape((-1, 1))
+            # dxb = dt * np.array([x[4, 0], x[5, 0], x[6, 0], x[7, 0], 0, 0, 0, 0, 0]).reshape((-1, 1)) 
+            
+            self.x += dxb
+            
+            # dxc = dt**2 / 2 * np.array([dx5, dx6, dx7, dx8, 0, 0, 0, 0]).reshape((-1, 1)) 
+            
+            # self.x+= dxc
+            
+            # dx = dt * np.array([x[4, 0], x[5, 0], x[6, 0], x[7, 0], dx5, dx6, dx7, dx8]).reshape((-1, 1))
+            
+            # self.x += dx
+        else:
+            _, _, dx7, dx8 = compute_accelerations(self.x, u)
 
-        #     self.x+= dxa
+            dxa = dt * np.array([0, 0, 0, 0, 0, 0, dx7, dx8]).reshape((-1, 1))
 
-        #     x = self.x
+            self.x+= dxa
 
-        #     dxb = dt * np.array([0, 0, x[6, 0], x[7, 0], 0, 0, 0, 0]).reshape((-1, 1))
+            x = self.x
 
-        #     self.x += dxb
+            dxb = dt * np.array([0, 0, x[6, 0], x[7, 0], 0, 0, 0, 0]).reshape((-1, 1))
 
-        #     self.x[0, 0] = l_l1
+            self.x += dxb
+
+            x = self.x
+
+            self.x[4, 0] = l_l1 * x[7, 0] * cos(x[3, 0])
+
+            self.x[5, 0] = - l_l1 * x[7, 0] * sin(x[3, 0])
+
+            x = self.x
+
+            # dxb = dt * np.array([x[4, 0], x[5, 0], x[6, 0], x[7, 0], 0, 0, 0, 0]).reshape((-1, 1))
+
+            # self.x+= dxb
+
+            dxc = dt * np.array([x[4, 0], x[5, 0], 0, 0, 0, 0, 0, 0]).reshape((-1, 1))
+
+            self.x+= dxc
 
         
   
@@ -130,9 +145,13 @@ del_cont = False
 
 cont_started = False
 
-rand_init = False
+rand_init = True
 
-appl_noise = False
+appl_noise = True
+
+automated_jump = False
+
+fast_run = False
 
 ground_force_threshold = 0.001
 
@@ -224,11 +243,11 @@ def compute_inertias(x):
     if data.sensor("feet_touch_sensor").data[0] < ground_force_threshold or (not ground_model_comp):
         I_l1 = model.body("leg_1").inertia[1] + m_l1 * l_l1**2 / 4 * m_b / m_tot
     else:
-        I_l1 = model.body("leg_1").inertia[1] + l_l1**2 * (m_l1 / 4 + m_b)
+        # I_l1 = model.body("leg_1").inertia[1] + l_l1**2 * (m_l1 / 4 + m_b)
         # I_l1 = model.body("leg_1").inertia[1] + l_l1**2 * (m_l1 / 4 + m_tot)
         # I_l1 = model.body("leg_1").inertia[1] + l_l1**2 * (m_l1 / 4 + m_b) + I_b
 
-        # I_l1 = model.body("leg_1").inertia[1] + l_l1**2 * (m_l1 / 4 * m_b / m_tot + (m_b + m_l1 / 2)**2 / m_tot)
+        I_l1 = model.body("leg_1").inertia[1] + l_l1**2 * (m_l1 / 4 * m_b / m_tot + (m_b + m_l1 / 2)**2 / m_tot)
     
     
     # # I_l1 = m_l1 * l_l1**2 * (1 / 3 - m_l1 / (8 * m_tot))
@@ -467,6 +486,14 @@ smoothing_story = []
 
 model_story = []
 
+ground_force_vec = np.zeros((3, 0))
+
+sim_foot_vel = np.zeros((3, 0))
+
+ground_contact = []
+
+IMU_update_instant = []
+
 
 bal_force = np.zeros((3, 0))
 f_cont_com = np.zeros((3, 0))
@@ -668,8 +695,8 @@ I_b, I_l1 = compute_inertias(ekf_theta.x)
 freq_COM = 2
 csi_COM = 1
 
-freq_theta = 40
-csi_theta = 1
+freq_theta = 10000
+csi_theta = 2
 
 freq_alpha_1 = 4
 csi_alpha_1 = 1
@@ -677,14 +704,14 @@ csi_alpha_1 = 1
 # freq_alpha_1 = 4
 # csi_alpha_1 = 2
 
-k_err_COM = freq_COM**2 * m_tot
-k_v_COM = 2 * csi_COM * freq_COM * m_tot
+# k_err_COM = freq_COM**2 * m_tot
+# k_v_COM = 2 * csi_COM * freq_COM * m_tot
 
-k_err_theta = freq_theta**2 * I_b
-k_v_theta = 2 * csi_theta * freq_theta * I_b
+# k_err_theta = freq_theta**2 * I_b
+# k_v_theta = 2 * csi_theta * freq_theta * I_b
 
-K_err_alpha_1 = freq_alpha_1**2 * I_l1
-k_v_alpha_1 = 2 * csi_alpha_1 * freq_alpha_1 * I_l1
+# K_err_alpha_1 = freq_alpha_1**2 * I_l1
+# k_v_alpha_1 = 2 * csi_alpha_1 * freq_alpha_1 * I_l1
 
 
 gamma_v = freq_COM / (2 * csi_COM)
@@ -692,12 +719,19 @@ gamma_v = freq_COM / (2 * csi_COM)
 gamma_acc = 2 * csi_COM * freq_COM * m_tot
 
 gamma_w_b = freq_theta / (2 * csi_theta)
+# gamma_w_b = -freq_theta / (2 * csi_theta)
 
-gamma_acc_b = 2 * csi_theta * freq_theta * m_tot
+gamma_acc_b = 2 * csi_theta * freq_theta * I_b
+# gamma_acc_b = 2 * csi_theta * freq_theta * m_tot
 
-gamma_w_1 = freq_alpha_1 / (2 * csi_alpha_1)
+# print (gamma_acc_b)
+# gamma_acc_b = - 2 * csi_theta * freq_theta * I_b
 
-gamma_acc_1 = 2 * csi_alpha_1 * freq_alpha_1 * m_tot
+# gamma_w_1 = freq_alpha_1 / (2 * csi_alpha_1)
+
+# gamma_acc_1 = 2 * csi_alpha_1 * freq_alpha_1 * m_tot
+
+gamma_acc_1 = freq_alpha_1 / I_l1
 
 
 # gamma_v = 1
@@ -717,8 +751,9 @@ gamma_acc_1 = 2 * csi_alpha_1 * freq_alpha_1 * m_tot
 
 max_vel = 0.4
 
-# max_w = 0.5
-max_w = 1
+max_w = 0.5
+# max_w = 1.5
+# max_w = 100
 
 max_rot_acc = 15
 
@@ -838,7 +873,8 @@ jump_vx/= traj_scale_fact
 # jump_vx = 0.1
 drawn_traj = False
 
-land_vz_max = -0.02
+# land_vz_max = -0.02
+land_vz_max = -0.1
 
 max_thrust = 12
 
@@ -882,25 +918,25 @@ def control_callback (model, data):
         
         P = ekf_theta.P.copy()
         
-        # x1 = x[0, 0]
-        # x2 = x[1, 0]
-        # x3 = x[2, 0]
-        # x4 = x[3, 0]
-        # x5 = x[4, 0]
-        # x6 = x[5, 0]
-        # x7 = x[6, 0]
-        # x8 = x[7, 0]
+        x1 = x[0, 0]
+        x2 = x[1, 0]
+        x3 = x[2, 0]
+        x4 = x[3, 0]
+        x5 = x[4, 0]
+        x6 = x[5, 0]
+        x7 = x[6, 0]
+        x8 = x[7, 0]
         
-        x1 = data.qpos[0]
-        x2 = data.qpos[2]
-        curr_bar_eul = np.zeros(3)
-        quat2eul(data.qpos[3:7], curr_bar_eul)
-        x3 = curr_bar_eul[1]
-        x4 = data.qpos[7] + curr_bar_eul[1]
-        x5 = data.qvel[0]
-        x6 = data.qvel[2]
-        x7 = data.qvel[4]
-        x8 = data.qvel[6] + data.qvel[4]
+        # x1 = data.qpos[0]
+        # x2 = data.qpos[2]
+        # curr_bar_eul = np.zeros(3)
+        # quat2eul(data.qpos[3:7], curr_bar_eul)
+        # x3 = curr_bar_eul[1]
+        # x4 = data.qpos[7] + curr_bar_eul[1]
+        # x5 = data.qvel[0]
+        # x6 = data.qvel[2]
+        # x7 = data.qvel[4]
+        # x8 = data.qvel[6] + data.qvel[4]
         
         # x1 = data.qpos[0]
         # x2 = data.qpos[2]
@@ -915,6 +951,10 @@ def control_callback (model, data):
         
         x = np.array([x1, x2, x3, x4, x5, x6, x7, x8]).reshape((-1, 1))
 
+
+        if automated_jump and abs(data.time - 10) < model.opt.timestep and curr_phase == 0:
+            curr_phase = 1
+
         if data.time >= 0.5 and del_cont and (not cont_started):
             print ("starting to apply force")
             phase_start = data.time
@@ -925,7 +965,8 @@ def control_callback (model, data):
         
         des_bal_force = np.array([0, 0, g * m_l1])
         if data.sensor("feet_touch_sensor").data > ground_force_threshold:
-            if in_air and (data.time - phase_start) > 0.5:
+            # if in_air and (data.time - phase_start) > 0.02:
+            if in_air and curr_phase == 2:
                 in_air = False
                 curr_phase = 0
             
@@ -1070,6 +1111,10 @@ def control_callback (model, data):
         
         com_cont_force = m_tot * ref_acc
         # com_cont_force*= 0
+
+        # if data.sensor("feet_touch_sensor").data > ground_force_threshold:
+        # if data.sensor("feet_touch_sensor").data > ground_force_threshold and curr_phase == 0:
+        #     com_cont_force*= 0
         
         
         # cont_force.shape = ((-1, 1))
@@ -1086,11 +1131,13 @@ def control_callback (model, data):
         
         
         
-        ref_w_1 = gamma_w_1 * (des_a1 - x4)
+        # ref_w_1 = gamma_w_1 * (des_a1 - x4)
         
-        ref_w1_max = np.linalg.norm(ref_w_1)
-        if ref_w1_max > max_w:
-            ref_w_1*= max_w / ref_w1_max
+        # ref_w1_max = np.linalg.norm(ref_w_1)
+        # if ref_w1_max > max_w:
+        #     ref_w_1*= max_w / ref_w1_max
+
+        ref_w_1 = 0
         
         ref_a_1 = gamma_acc_1 * (ref_w_1 - x8) 
         
@@ -1110,6 +1157,8 @@ def control_callback (model, data):
         # f_a1 = I_l1 / l_l1 * m_tot / m_l1 * ref_a_1
         
         des_M_1 = I_l1 * ref_a_1
+
+        des_M_1+= damp_coeff * (x8 - x7)
         
         # goal_alpha_1.append(des_a1)
         # goal_w_1.append(x7.copy())
@@ -1122,6 +1171,7 @@ def control_callback (model, data):
         
         if data.sensor("feet_touch_sensor").data > ground_force_threshold:
             a1_cont_force*= 0
+            # a1_cont_force*= 0.2
 
             
         
@@ -1194,6 +1244,8 @@ def control_callback (model, data):
         # rot_int = ref_acc_b * I_b / l_b
         
         des_M_bar = I_b * ref_acc_b
+
+        des_M_bar+= damp_coeff * (x7 - x8)
 
         rot_int = des_M_bar / l_b
 
@@ -1269,6 +1321,10 @@ def kb_callback(keycode):
     """ if chr(keycode) == 'F':
         global appl_force
         appl_force = not appl_force """
+    if chr(keycode) == 'F':
+        # print ("toggling fast run")
+        global fast_run
+        fast_run = not fast_run
         
 #x = np.zeros(6)
 # def h_x (x, f1, f2):
@@ -1958,6 +2014,9 @@ model.vis.scale.forcewidth = 0.02
 model.vis.map.force = 0.2
 
 cont_forces = np.zeros(6)
+
+
+# print (dir(data.site("feet")))
         
 # print ("starting viewer")
 # print (model.opt.timestep)
@@ -2036,7 +2095,8 @@ try:
         # print ("starting loop")
         #print (mujoco.mjtCatBit.mjCAT_ALL)
         # while viewer.is_running() and (not exit) :
-        while viewer.is_running() and (not exit) and data.time < 30:
+        while viewer.is_running() and (not exit) and data.time < 60:
+        # while viewer.is_running() and (not exit) and data.time < 30:
         # while viewer.is_running() and (not exit) and data.time < 30 and data.sensor("feet_touch_sensor").data < 0.01:
             # if data.time > 0.348:
             #     print (H_jac(ekf_theta.x))
@@ -2059,6 +2119,7 @@ try:
                     f2 = data.actuator("propeller2").ctrl[0]
                     # print(f1, f2)
                     mujoco.mj_forward(model, data)
+                    # mujoco.mj_step1(model, data)
                     # f1 = data.actuator("propeller1").ctrl.copy()
                     # f2 = data.actuator("propeller2").ctrl.copy()
                     
@@ -2225,8 +2286,36 @@ try:
                     M_cont_leg.append(des_M_1)
                     M_cont_bar.append(des_M_bar)
 
+                    # cont_forces = np.zeros(6)
+                    mujoco.mju_zero(cont_forces)
 
+                    curr_contact = 0
+
+                    for i, cont in enumerate(data.contact):
+                        # print(dir(cont))
+                        # print (dir(cont.geom[0]))
+                        # if cont.geom[0] == data.geom("leg_1_stick").id or cont.geom[1] == data.geom("leg_1_stick").id:
+                        # if data.geom("leg_1_stick").id in cont.geom:
+                        if data.geom("floor").id in cont.geom:
+                            mujoco.mj_contactForce(model, data, i, cont_forces)
+                            # print (cont_forces)
+                            # print (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[0]),\
+                            #         mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[1]))
+                            # print (cont_forces[0] / cont_forces [1])
+                            curr_contact = 1
+                            
+                            break
                     
+                    ground_force_vec = np.append(ground_force_vec, cont_forces[0:3].copy().reshape((-1, 1)), axis = 1)
+
+                    ground_contact.append(curr_contact)
+
+                    curr_foot_vel = np.zeros(6)
+                    foot_site_id = data.site("feet").id
+                    mujoco.mj_objectVelocity(model, data, mujoco.mjtObj.mjOBJ_SITE, foot_site_id, curr_foot_vel, 0)
+                    # print(curr_foot_vel)
+                    # sim_foot_vel = np.append(sim_foot_vel, curr_foot_vel[0:3].copy().reshape((-1, 1)), axis = 1)
+                    sim_foot_vel = np.append(sim_foot_vel, curr_foot_vel[3:].copy().reshape((-1, 1)), axis = 1)
                     
                     # P = ekf_theta.P.copy()
                     # p_diag = np.array([P[0, 0], P[1, 1], P[2, 2]]).reshape((3, 1))
@@ -2400,7 +2489,8 @@ try:
                     
                     
                     # if (ekf_count == 0) and False:
-                    if (ekf_count == 0) and do_update: 
+                    if (ekf_count == 0) and do_update:
+                    # if (ekf_count == 0) and (not and do_update: 
                                                                 
                         
                         # mujoco.mj_forward(model, data)
@@ -2411,6 +2501,9 @@ try:
                         h_est = h_x(ekf_theta.x)
                         
                         ekf_theta.update(z = z, HJacobian = H_jac, Hx = h_x)
+                        IMU_update_instant.append(1)
+                    else:
+                        IMU_update_instant.append(0)
                     # z_gps = 0
                     if gps_count == 0 and do_update:
                         # print ("gps update")
@@ -2583,11 +2676,11 @@ try:
                 
                 
                 
-                
-            time_to_step = model.opt.timestep - (time.time() - step_start)
-            # print(time_to_step)
-            if (time_to_step > 0):
-                time.sleep(time_to_step)
+            if (not fast_run):
+                time_to_step = model.opt.timestep - (time.time() - step_start)
+                # print(time_to_step)
+                if (time_to_step > 0):
+                    time.sleep(time_to_step)
 except Exception as e:
     print (e)
 
@@ -2701,7 +2794,13 @@ with open(csv_name, 'w', newline = '') as csvfile:
 
     data_writer.writerow(np.append(M_cont_bar, '\b'))
 
-    
+    data_writer.writerows(np.concatenate((ground_force_vec, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+
+    data_writer.writerows(np.concatenate((sim_foot_vel, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+
+    data_writer.writerow(np.append(ground_contact, '\b'))
+
+    data_writer.writerow(np.append(IMU_update_instant, '\b'))
     
 print ("data stored in file", csv_name)
 
