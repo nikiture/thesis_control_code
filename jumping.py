@@ -112,6 +112,160 @@ def quat2eul(quat, eul):
     eul[2] = math.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy**2 + qz**2))   
 
 
+
+def compute_predict_matrices(x, u):
+    
+    g = - model.opt.gravity[2]
+
+    f1 = u [0, 0]
+
+    f2 = u [1, 0]
+
+    I_b, I_l1 = compute_inertias(x)
+    
+    
+    F = np.eye(8) + dt * np.diag(np.array([1, 1, 1, 1]), 4)
+    # F = np.eye(9) + dt * np.diag(np.array([1, 1, 1, 1, 0]), 4)
+
+    # print (F)
+
+    F [6, 6]-= dt * damp_coeff / I_b
+    
+    F [6, 7] = dt * damp_coeff / I_b
+    
+    # F [6, 8] = - dt / I_b * (x[6, 0] - x[7, 0])
+
+
+    F [7, 6] = dt * damp_coeff / I_l1
+    
+    F [7, 7]-= dt * damp_coeff / I_l1
+    
+    # F [7, 8] = - dt / I_l1 * (x[7, 0] - x[6, 0])
+    
+    if data.sensor("feet_touch_sensor").data[0] < ground_force_threshold or (not ground_model_comp):
+    
+        F [4, 2] = dt * (f1 + f2) / m_tot * (cos(x[2, 0]) + m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * cos(x[3, 0]) * cos(x[2, 0] - x[3, 0]))
+        
+        # sin(x[3, 0]) * sin(x[2, 0] - x[3, 0]) + cos(x[3, 0]) * cos(x[2, 0] - x[3, 0]) = cos(x[2, 0] - 2*x[3, 0])
+        F [4, 3] = dt / m_tot * (- m_l1 * l_l1 / 2 * x[7, 0]**2 * cos(x[3, 0]) - (f1 + f2) * m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * cos(x[2, 0] - 2*x[3, 0]) + m_l1 / I_l1 * damp_coeff * l_l1 / 2 * sin(x[3, 0]) * (x[7, 0] - x[6, 0]))
+        
+        F [4, 6] = dt * m_l1 / m_tot * l_l1 / 2 * damp_coeff / I_l1 * cos(x[3, 0])
+        
+        F [4, 7] = - dt * m_l1 / m_tot * l_l1 * (x[7, 0] * sin(x[3, 0]) + 1 / 2 * damp_coeff / I_l1 * cos(x[3, 0]))
+        
+        # F [4, 8] = - dt * m_l1 / m_tot * l_l1 / 2 * cos(x[3, 0]) * (x[7, 0] - x[6, 0]) / I_l1
+        
+        
+        F [5, 2] = dt / m_tot * (f1 + f2) * (- sin(x[2, 0]) - m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * sin(x[3, 0]) * cos(x[2, 0] - x[3, 0]))
+        #-cos(x[3, 0])*sin(x[2, 0]-x[3, 0])+sin(x[3, 0])*cos(x[2, 0]-x[3, 0])= 
+        F [5, 3] = dt / m_tot * (m_l1 * l_l1 / 2 * x[7, 0] * sin(x[3, 0]) - (f1 + f2) * m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * sin(x[2, 0] - 2*x[3, 0]) + m_l1 / I_l1 * l_l1 / 2 * damp_coeff * (x[7, 0] - x[6, 0]) * cos(x[3, 0]))
+        
+        F [5, 6] = - dt * m_l1 / m_tot * damp_coeff / I_l1 * l_l1 / 2 * sin(x[3, 0])
+        
+        F [5, 7] = dt * m_l1 / m_tot * l_l1 * (x[7, 0] * cos(x[3, 0]) + sin(x[3, 0]) / 2 * damp_coeff / I_l1)
+        
+        # F [5, 8] = dt * m_l1 / m_tot * l_l1 / 2 * sin(x[3, 0]) * (x[7, 0] - x[6, 0]) / I_l1
+        
+        
+        
+        
+        
+        F [7, 2] = dt / I_l1 * (f1 + f2) * m_l1 / m_tot * l_l1 / 2 * cos(x[2, 0] - x[3, 0])
+        
+        F [7, 3] = - dt / I_l1 * (f1 + f2) * m_l1 / m_tot * l_l1 / 2 * cos(x[2, 0] - x[3, 0])
+    
+    
+    
+    else: #ground model
+        
+        F [4, 2] = l_l1**2 / I_l1 * (f1 + f2) * cos(x[2, 0] - x[3, 0]) * cos(x[3, 0])
+        F [4, 2]*= dt
+
+        F [4, 3] = l_l1**2 / I_l1 * (g * l_l1 * cos(2 * x[3, 0]) * (m_tot - m_l1 / 2) + (f1 + f2) * (- cos(x[2, 0] - x[3, 0]) * cos(x[3, 0]) - sin(x[2, 0] - x[3, 0]) * sin(x[3, 0]))) + damp_coeff * (x[7, 0] - x[6, 0]) * sin(x[3, 0]) * l_l1 / I_l1 - l_l1 * x[7, 0]**2 * cos(x[3, 0])
+        F [4, 3]*= dt
+
+        F [4, 6] = damp_coeff * l_l1 / I_l1
+        F [4, 6]*= dt
+
+        F [4, 7] = - 2 * l_l1 * x[7, 0] * sin(x[3, 0]) - damp_coeff * l_l1 / I_l1
+        F [4, 7]*= dt
+
+
+        F [5, 2] = - l_l1**2 / I_l1 * (f1 + f2) * cos(x[2, 0] - x[3, 0]) * sin(x[3, 0])
+        F [5, 2]*= dt
+        
+        F [5, 3] = - l_l1 / I_l1 * (- damp_coeff * (x[7, 0] - x[6, 0]) * cos(x[3, 0]) + l_l1 * (g * (m_tot - m_l1 / 2) * sin(2 * x[3, 0]) + (f1 + f2) * (- cos(x[2, 0] - x[3, 0]) * sin(x[3, 0]) + sin(x[2, 0] - x[3, 0]) * cos(x[3, 0])))) + l_l1 * x[7, 0]**2 * sin(x[3, 0])
+        F [5, 3]*= dt
+
+        F [5, 6] = - l_l1 / I_l1 * damp_coeff
+        F [5, 6]*= dt
+
+        F [5, 7] = - 2 * l_l1 * x[7, 0] * cos(x[3, 0]) + l_l1 / I_l1 * damp_coeff
+        F [5, 7]*= dt
+
+
+        F [7, 2] = dt * (f1 + f2) * l_l1 / I_l1 * cos(x[2, 0] - x[3, 0])
+
+        F [7, 3] = dt * l_l1 / I_l1 * (g * (m_tot - m_l1 / 2) * cos(x[3, 0]) - (f1 + f2) * cos(x[2, 0] - x[3, 0]))
+    
+    
+    
+    
+    B = np.zeros((8, 2))
+
+    B [6, 0] = dt / I_b * l_b / 2
+        
+    B [6, 1] = - B [6, 0]
+    
+    if data.sensor("feet_touch_sensor").data[0] < ground_force_threshold or (not ground_model_comp):
+        B [4, 0] = dt / m_tot * (sin(x[2, 0]) + m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * cos(x[3, 0]) * sin(x[2, 0] - x[3, 0]))
+        
+        B [4, 1] = B [4, 0]
+        
+        
+        B [5, 0] = dt / m_tot * (cos(x[2, 0]) + m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * sin(x[3, 0]) * sin(x[2, 0] - x[3, 0]))
+        
+        B [5, 1] = B [5, 0]
+        
+        
+        B [7, 0] = dt / I_l1 * m_l1 / m_tot * l_l1 / 2 * sin(x[2, 0] - x[3, 0])
+        
+        B [7, 1] = B [7, 0]
+
+    else:
+        B [4, 0] = dt * l_l1**2 / I_l1 * sin(x[2, 0] - x[3, 0]) * cos(x[3, 0])
+
+        B [4, 1] = B [4, 0]
+
+
+        B [5, 0] = - dt * l_l1**2 / I_l1 * sin(x[2, 0] - x[3, 0]) * sin(x[3, 0])
+
+        B [5, 1] = B [5, 0]
+
+
+        B [7, 0] = dt * l_l1 / I_l1 * sin(x[2, 0] - x[3, 0])
+
+        B [7, 1] = B [7, 0]
+
+    return F, B
+
+def compute_ground_prediction_matrix(x):
+    B_g = np.zeros((8, 2))
+
+    B_g [7, 0] = - l_l1 / I_l1 * cos(x[7, 0]) * (1 - m_l1 / (2*m_tot))
+
+    B_g [7, 1] = l_l1 / I_l1 * sin(x[7, 0]) * (1 - m_l1 / (2*m_tot))
+
+    B_g [4, 0] = l_l1 * cos(x[7, 0]) * B_g[7, 0]
+
+    B_g [4, 1] = l_l1 * cos(x[7, 0]) * B_g[7, 1]
+
+    B_g [5, 0] = - l_l1 * sin(x[7, 0]) * B_g[7, 0]
+
+    B_g [5, 1] = - l_l1 * sin(x[7, 0]) * B_g[7, 1]
+
+    return B_g
+
 # print ("creating model and data")
 model = mujoco.MjModel.from_xml_path ("models/jumping.xml")
 #model.opt.timestep = 0.002
@@ -141,7 +295,7 @@ ground_model_comp = True
 
 do_control = True
 
-del_cont = False
+del_cont = True
 
 cont_started = False
 
@@ -670,14 +824,20 @@ ekf_theta.R = R.copy()
 
 
 # var_dist = 0.01
-var_dist = 0
+# var_dist = 0
 # var_dist = 0.1
+
+var_prop_dist = 0.1
+
+var_ground_dist = 0.1
+
+
 Q = np.zeros((8, 8))
 #computations for Q (if needed)
 
 #ekf_theta.Q = Q
 
-ekf_theta.Q*= var_dist
+# ekf_theta.Q*= var_dist
 
 
 # ekf_theta.P *= 10
@@ -695,8 +855,8 @@ I_b, I_l1 = compute_inertias(ekf_theta.x)
 freq_COM = 2
 csi_COM = 1
 
-freq_theta = 10000
-csi_theta = 2
+freq_theta = 1000
+csi_theta = 4
 
 freq_alpha_1 = 4
 csi_alpha_1 = 1
@@ -857,20 +1017,35 @@ leg_des_pos = foot_pos + l_l1 / 2 * np.array([0, 0, 1])
 start_des_pos = 1/m_tot * (m_b*bar_des_pos.reshape((-1, 1))+m_l1*leg_des_pos.reshape((-1, 1)))
 
 # start_des_pos = curr_pos.copy()
-    
-    
-jump_acc = - 1
-jump_v_z_0 = 1.5
-jump_vx = 0.7
 
-traj_scale_fact = 4
-jump_acc/= traj_scale_fact**2
-jump_v_z_0/= traj_scale_fact
-jump_vx/= traj_scale_fact
+jump_height = 0.8
+
+t_zmax = 4
+
+x_land = 2
+
+jump_acc = - 2 * jump_height / t_zmax**2
+
+jump_v_z_0 = 2 * jump_height / t_zmax
+
+jump_vx = x_land / (2*t_zmax)
+
+    
+# jump_acc = - 1
+# jump_v_z_0 = 1.5
+# jump_vx = 0.7
+
+# traj_scale_fact = 4
+# jump_acc/= traj_scale_fact**2
+# jump_v_z_0/= traj_scale_fact
+# jump_vx/= traj_scale_fact
 
 # jump_acc = - 0.5
 # jump_v_z_0 = 0.8
 # jump_vx = 0.1
+
+print (jump_acc, jump_v_z_0, jump_vx)
+
 drawn_traj = False
 
 # land_vz_max = -0.02
@@ -911,385 +1086,400 @@ def control_callback (model, data):
     global des_bal_force, com_cont_force, des_M_1, des_M_bar
     
     # global f1, f2
-    try:
-        g = - model.opt.gravity[2]
-        
-        x = ekf_theta.x.copy()
-        
-        P = ekf_theta.P.copy()
-        
-        x1 = x[0, 0]
-        x2 = x[1, 0]
-        x3 = x[2, 0]
-        x4 = x[3, 0]
-        x5 = x[4, 0]
-        x6 = x[5, 0]
-        x7 = x[6, 0]
-        x8 = x[7, 0]
-        
-        # x1 = data.qpos[0]
-        # x2 = data.qpos[2]
-        # curr_bar_eul = np.zeros(3)
-        # quat2eul(data.qpos[3:7], curr_bar_eul)
-        # x3 = curr_bar_eul[1]
-        # x4 = data.qpos[7] + curr_bar_eul[1]
-        # x5 = data.qvel[0]
-        # x6 = data.qvel[2]
-        # x7 = data.qvel[4]
-        # x8 = data.qvel[6] + data.qvel[4]
-        
-        # x1 = data.qpos[0]
-        # x2 = data.qpos[2]
-        # curr_bar_eul = np.zeros(3)
-        # quat2eul(data.qpos[3:7], curr_bar_eul)
-        # x3 = curr_bar_eul[1]
-        # x4 = data.qpos[7]
-        # x5 = data.qvel[0]
-        # x6 = data.qvel[2]
-        # x7 = data.qvel[4]
-        # x8 = data.qvel[6]
-        
-        x = np.array([x1, x2, x3, x4, x5, x6, x7, x8]).reshape((-1, 1))
+    # try:
+    g = - model.opt.gravity[2]
+    
+    x = ekf_theta.x.copy()
+    
+    # P = ekf_theta.P.copy()
+    
+    x1 = x[0, 0]
+    x2 = x[1, 0]
+    x3 = x[2, 0]
+    x4 = x[3, 0]
+    x5 = x[4, 0]
+    x6 = x[5, 0]
+    x7 = x[6, 0]
+    x8 = x[7, 0]
+    
+    # x1 = data.qpos[0]
+    # x2 = data.qpos[2]
+    # curr_bar_eul = np.zeros(3)
+    # quat2eul(data.qpos[3:7], curr_bar_eul)
+    # x3 = curr_bar_eul[1]
+    # x4 = data.qpos[7] + curr_bar_eul[1]
+    # x5 = data.qvel[0]
+    # x6 = data.qvel[2]
+    # x7 = data.qvel[4]
+    # x8 = data.qvel[6] + data.qvel[4]
+    
+    # x1 = data.qpos[0]
+    # x2 = data.qpos[2]
+    # curr_bar_eul = np.zeros(3)
+    # quat2eul(data.qpos[3:7], curr_bar_eul)
+    # x3 = curr_bar_eul[1]
+    # x4 = data.qpos[7]
+    # x5 = data.qvel[0]
+    # x6 = data.qvel[2]
+    # x7 = data.qvel[4]
+    # x8 = data.qvel[6]
+    
+    x = np.array([x1, x2, x3, x4, x5, x6, x7, x8]).reshape((-1, 1))
 
 
-        if automated_jump and abs(data.time - 10) < model.opt.timestep and curr_phase == 0:
-            curr_phase = 1
+    if automated_jump and abs(data.time - 10) < model.opt.timestep and curr_phase == 0:
+        curr_phase = 1
 
-        if data.time >= 0.5 and del_cont and (not cont_started):
-            print ("starting to apply force")
-            phase_start = data.time
-            cont_started = True
+    if data.time >= 0.5 and del_cont and (not cont_started):
+        print ("starting to apply force")
+        phase_start = data.time
+        cont_started = True
+    
+    I_b, I_l1 = compute_inertias(x)
+    
+    
+    des_bal_force = np.array([0, 0, g * m_l1])
+    if data.sensor("feet_touch_sensor").data > ground_force_threshold:
+        # if in_air and (data.time - phase_start) > 0.02:
+        if in_air and curr_phase == 2:
+            in_air = False
+            curr_phase = 0
         
-        I_b, I_l1 = compute_inertias(x)
+        des_bal_force = np.array([0, 0, g * m_l1 / 2])
+        # des_bal_force[2]-= m_l1 * l_l1 / 2 * cos(x4) * x8**2
+        # des_bal_force[2]+= m_l1 * l_l1 / 2 * cos(x4) * x8**2
+    des_bal_force+= np.array([0, 0, g * (m_b)])
+    
+    # des_bal_force = np.array([0, 0, g * (m_tot)])
+    # des_bal_force[2]-= data.sensor("feet_touch_sensor").data
+    
+    # ground_force.append(data.sensor("feet_touch_sensor").data[0].copy())
+    
+    
+    
+    
+    # # print ("data: ", data.sensor("feet_touch_sensor").data)
+    
+    # print (des_bal_force, np.array([0, 0, g * m_tot]))
+    # print (des_bal_force + np.array([0, 0, data.sensor("feet_touch_sensor").data[0]]), np.array([0, 0, g * m_tot]))
+    
+    # des_bal_force = np.array([0, 0, m_tot * g])
+    # des_bal_force[2]-= data.sensor("feet_touch_sensor").data[0]
+    
+    # cont_force = np.zeros(3)
+    
+    # des_bal_force*= activation_sigmoid(0, 0.01, 0, 1, data.time)
+    
+
+    # curr_pos = l_1 * np.array([sin(x1), 0, cos(x1)]).reshape((3, 1)) * (x5/2 + x6) / (x5 + x6)
+    # curr_vel = l_1 * x3 * (x5/2 + x6) / (x5 + x6) * np.array([cos(x1), 0, -sin(x1)]).reshape((3, 1))
+    
+    # curr_pos = data.qpos[:3].copy().reshape((-1, 1))
+    # curr_vel = data.qvel[:3].copy().reshape((-1, 1))
+    
+    curr_pos = np.array([x1, 0, x2]).reshape((-1, 1)) * m_tot
+    curr_pos-= m_l1 * l_l1 / 2 * np.array([sin(x4), 0, cos(x4)]).reshape((-1, 1))
+    curr_pos/= m_tot
+    
+    curr_vel = np.array([x5, 0, x6]).reshape((-1, 1)) * m_tot
+    curr_vel+= m_l1 * l_l1 / 2 * x8 * np.array([-cos(x4), 0, sin(x4)]).reshape((-1, 1))
+    curr_vel/= m_tot
+    
+    # COM_pos = np.append(COM_pos, curr_pos.reshape((-1, 1)), axis = 1)
+    # COM_vel = np.append(COM_vel, curr_vel.reshape((-1, 1)), axis = 1)
+    
+    if data.sensor("feet_touch_sensor").data[0] < ground_force_threshold:
+        in_air = True
+    
+    if curr_phase != prev_phase:
+        prev_phase = curr_phase
+        phase_start = data.time
+        if curr_phase != 0:
+            print ('phase 1 or 2')
+            start_des_pos = curr_pos.reshape((-1, 1))
+        else:
+            foot_pos = np.array([x1, 0, x2]).reshape((-1, 1)) - l_l1 * np.array([sin(x4), 0, cos(x4)]).reshape((-1, 1))
+            bar_des_pos = foot_pos + np.array([0, 0, l_l1]).reshape((-1, 1))
+            leg_des_pos = foot_pos + l_l1 / 2 * np.array([0, 0, 1]).reshape((-1, 1))
+            start_des_pos = 1/m_tot * (m_b*bar_des_pos+m_l1*leg_des_pos)
+
         
-        
-        des_bal_force = np.array([0, 0, g * m_l1])
-        if data.sensor("feet_touch_sensor").data > ground_force_threshold:
-            # if in_air and (data.time - phase_start) > 0.02:
-            if in_air and curr_phase == 2:
-                in_air = False
-                curr_phase = 0
-            
-            des_bal_force = np.array([0, 0, g * m_l1 / 2])
-            # des_bal_force[2]-= m_l1 * l_l1 / 2 * cos(x4) * x8**2
-            # des_bal_force[2]+= m_l1 * l_l1 / 2 * cos(x4) * x8**2
-        des_bal_force+= np.array([0, 0, g * (m_b)])
-        
-        # des_bal_force = np.array([0, 0, g * (m_tot)])
-        # des_bal_force[2]-= data.sensor("feet_touch_sensor").data
-        
-        # ground_force.append(data.sensor("feet_touch_sensor").data[0].copy())
-        
-        
-        
-        
-        # # print ("data: ", data.sensor("feet_touch_sensor").data)
-        
-        # print (des_bal_force, np.array([0, 0, g * m_tot]))
-        # print (des_bal_force + np.array([0, 0, data.sensor("feet_touch_sensor").data[0]]), np.array([0, 0, g * m_tot]))
-        
-        # des_bal_force = np.array([0, 0, m_tot * g])
-        # des_bal_force[2]-= data.sensor("feet_touch_sensor").data[0]
-        
-        # cont_force = np.zeros(3)
-        
-        # des_bal_force*= activation_sigmoid(0, 0.01, 0, 1, data.time)
         
 
-        # curr_pos = l_1 * np.array([sin(x1), 0, cos(x1)]).reshape((3, 1)) * (x5/2 + x6) / (x5 + x6)
-        # curr_vel = l_1 * x3 * (x5/2 + x6) / (x5 + x6) * np.array([cos(x1), 0, -sin(x1)]).reshape((3, 1))
-        
-        # curr_pos = data.qpos[:3].copy().reshape((-1, 1))
-        # curr_vel = data.qvel[:3].copy().reshape((-1, 1))
-        
-        curr_pos = np.array([x1, 0, x2]).reshape((-1, 1)) * m_tot
-        curr_pos-= m_l1 * l_l1 / 2 * np.array([sin(x4), 0, cos(x4)]).reshape((-1, 1))
-        curr_pos/= m_tot
-        
-        curr_vel = np.array([x5, 0, x6]).reshape((-1, 1)) * m_tot
-        curr_vel+= m_l1 * l_l1 / 2 * x8 * np.array([-cos(x4), 0, sin(x4)]).reshape((-1, 1))
-        curr_vel/= m_tot
-        
-        # COM_pos = np.append(COM_pos, curr_pos.reshape((-1, 1)), axis = 1)
-        # COM_vel = np.append(COM_vel, curr_vel.reshape((-1, 1)), axis = 1)
-        
-        if data.sensor("feet_touch_sensor").data[0] < ground_force_threshold:
-            in_air = True
-        
-        if curr_phase != prev_phase:
-            prev_phase = curr_phase
-            phase_start = data.time
-            if curr_phase != 0:
-                print ('phase 1 or 2')
-                start_des_pos = curr_pos.reshape((-1, 1))
-            else:
-                foot_pos = np.array([x1, 0, x2]).reshape((-1, 1)) - l_l1 * np.array([sin(x4), 0, cos(x4)]).reshape((-1, 1))
-                bar_des_pos = foot_pos + np.array([0, 0, l_l1]).reshape((-1, 1))
-                leg_des_pos = foot_pos + l_l1 / 2 * np.array([0, 0, 1]).reshape((-1, 1))
-                start_des_pos = 1/m_tot * (m_b*bar_des_pos+m_l1*leg_des_pos)
-
-            
-            
-
-        if curr_phase == 1: #in jump
-            
-            delta_t = data.time - phase_start
-            des_pos = start_des_pos.copy().reshape((-1, 1))
-            des_pos+= np.array([jump_vx * (delta_t), 0, jump_v_z_0 * (delta_t) + jump_acc / 2 * delta_t**2]).reshape((-1, 1))
-            
-            # print (des_pos)
-            
-            des_vel = np.zeros((3, 1))
-            des_vel+= np.array([jump_vx, 0, jump_v_z_0 + jump_acc * delta_t]).reshape((-1, 1))
-            
-            des_acc = np.zeros((3, 1))
-            des_acc+= np.array([0, 0, jump_acc]).reshape((-1, 1))
-            
-        if curr_phase == 2: #second part of jump (after maximum)
-            delta_t = data.time - phase_start
-            #landing phase, maximum descent velocity (and no horizontal velocity)
-            des_acc = np.zeros((3, 1))
-            
-            des_vel = np.array([0, 0, land_vz_max]).reshape((-1, 1))
-            
-            des_pos = start_des_pos + delta_t * des_vel
-
-                
-            
-        
-        if curr_phase == 0:
-            des_pos = start_des_pos
-            
-            des_vel = np.zeros((3, 1))
-            
-            des_acc = np.zeros((3, 1))
+    if curr_phase == 1: #in jump
         
         delta_t = data.time - phase_start
-        if curr_phase == 1 and x2 < 1.5 * l_l1 and delta_t > - jump_v_z_0 / jump_acc:
-        # if curr_phase == 1 and delta_t > - jump_v_z_0 / jump_acc:
-            print ("landing phase")
-            curr_phase = 2
+        des_pos = start_des_pos.copy().reshape((-1, 1))
+        des_pos+= np.array([jump_vx * (delta_t), 0, jump_v_z_0 * (delta_t) + jump_acc / 2 * delta_t**2]).reshape((-1, 1))
         
-        smoothing_fact = activation_sigmoid(0, 0.1, 0, 1, data.time - phase_start)
+        # print (des_pos)
         
+        des_vel = np.zeros((3, 1))
+        des_vel+= np.array([jump_vx, 0, jump_v_z_0 + jump_acc * delta_t]).reshape((-1, 1))
         
-        ref_vel = gamma_v * (des_pos - curr_pos)
-        # ref_vel = gamma_v * (des_pos - curr_pos) * smoothing_fact
-        ref_vel += des_vel
+        des_acc = np.zeros((3, 1))
+        des_acc+= np.array([0, 0, jump_acc]).reshape((-1, 1))
         
-        # ref_vel*= smoothing_fact
+    if curr_phase == 2: #second part of jump (after maximum)
+        delta_t = data.time - phase_start
+        #landing phase, maximum descent velocity (and no horizontal velocity)
+        des_acc = np.zeros((3, 1))
         
-        ref_vel_max = np.linalg.norm(ref_vel)
-        if ref_vel_max > max_vel:
-            ref_vel*= max_vel / ref_vel_max
-            
+        des_vel = np.array([0, 0, land_vz_max]).reshape((-1, 1))
         
-        
-        ref_acc = gamma_acc * (ref_vel - curr_vel)
-        
-        ref_acc+= des_acc
-        
-        ref_acc*= smoothing_fact
-        
-        
-        # ref_acc = gamma_acc * (ref_vel - curr_vel) * smoothing_fact
-        
-        # COM_err = curr_pos - des_pos
-        # COM_v_err = curr_vel - des_vel
-        
-        # goal_pos = np.append(goal_pos, des_pos.reshape((-1, 1)), axis = 1)
-        # goal_vel = np.append(goal_vel, ref_vel.reshape((-1, 1)), axis = 1)
-        
-        
-        # goal_pos = np.append(goal_pos, des_pos.reshape((-1, 1)), axis = 1)
-        # goal_vel = np.append(goal_vel, des_vel.reshape((-1, 1)), axis = 1)
-        
-        # ref_acc = k_v_COM * COM_v_err + k_err_COM * COM_err
-        # ref_acc*= -1
-        # ref_acc+= des_acc
-        # ref_acc*= 0
-        
-        com_cont_force = m_tot * ref_acc
-        # com_cont_force*= 0
-
-        # if data.sensor("feet_touch_sensor").data > ground_force_threshold:
-        # if data.sensor("feet_touch_sensor").data > ground_force_threshold and curr_phase == 0:
-        #     com_cont_force*= 0
-        
-        
-        # cont_force.shape = ((-1, 1))
-        # cont_force+= m_l1 * l_l1 / 2 * (a1_acc * np.array([- cos(x4), 0, sin(x4)]).reshape((-1, 1)) + x8**2 * np.array([sin(x4), 0, cos(x4)]).reshape((-1, 1)))
-        # cont_force/= 2
-        # cont_force*=-1
-        # cont_force*= 0
-        
-        
-        # des_a1 = x3.copy()
-        # des_w_1 = x7.copy()
-        des_a1 = 0
-        des_w_1 = 0
-        
-        
-        
-        # ref_w_1 = gamma_w_1 * (des_a1 - x4)
-        
-        # ref_w1_max = np.linalg.norm(ref_w_1)
-        # if ref_w1_max > max_w:
-        #     ref_w_1*= max_w / ref_w1_max
-
-        ref_w_1 = 0
-        
-        ref_a_1 = gamma_acc_1 * (ref_w_1 - x8) 
-        
-        # print (ref_a_1, max_rot_acc)
-        # ref_a1_norm = abs(ref_a_1)
-        # if ref_a1_norm > max_rot_acc:
-        #     ref_a_1*= max_rot_acc / ref_a1_norm
-        
-        # goal_alpha_1.append(des_a1)
-        # goal_w_1.append(ref_w_1)
-        
-        
-        # ref_a_1 = k_v_alpha_1 * (des_w_1 - x8)
-        # if curr_phase == 1:
-        #     ref_a_1+= K_err_alpha_1 * (des_a1 - x4)
-        # ref_a_1*= 0
-        # f_a1 = I_l1 / l_l1 * m_tot / m_l1 * ref_a_1
-        
-        des_M_1 = I_l1 * ref_a_1
-
-        des_M_1+= damp_coeff * (x8 - x7)
-        
-        # goal_alpha_1.append(des_a1)
-        # goal_w_1.append(x7.copy())
-        
-        # a1_cont_force = des_M_1 / l_l1 * m_tot / m_l1 * np.array([cos(x4), 0, -sin(x4)]).reshape((-1, 1))
-        a1_cont_force = des_M_1 / l_l1 * np.array([cos(x4), 0, -sin(x4)]).reshape((-1, 1))
-        # a1_cont_force*= -1
-        
-        # a1_cont_force*= 0
-        
-        if data.sensor("feet_touch_sensor").data > ground_force_threshold:
-            a1_cont_force*= 0
-            # a1_cont_force*= 0.2
+        des_pos = start_des_pos + delta_t * des_vel
 
             
         
-            
+    
+    if curr_phase == 0:
+        des_pos = start_des_pos
         
-        mujoco.mju_add (cont_force, com_cont_force, a1_cont_force)
-        # cont_force*= 0
-        # cont_force*= smoothing_fact
+        des_vel = np.zeros((3, 1))
+        
+        des_acc = np.zeros((3, 1))
+    
+    delta_t = data.time - phase_start
+    if curr_phase == 1 and x2 < 1.5 * l_l1 and delta_t > - jump_v_z_0 / jump_acc:
+    # if curr_phase == 1 and delta_t > - jump_v_z_0 / jump_acc:
+        print ("landing phase")
+        curr_phase = 2
+    
+    smoothing_fact = activation_sigmoid(0, 0.1, 0, 1, data.time - phase_start)
+    
+    
+    ref_vel = gamma_v * (des_pos - curr_pos)
+    # ref_vel = gamma_v * (des_pos - curr_pos) * smoothing_fact
+    ref_vel += des_vel
+    
+    # ref_vel*= smoothing_fact
+    
+    ref_vel_max = np.linalg.norm(ref_vel)
+    if ref_vel_max > max_vel:
+        ref_vel*= max_vel / ref_vel_max
 
-        if data.time < 0.5 and del_cont:
-            cont_force*= 0
-        
-        #cont_force = np.zeros(3)
-        #bal_force = np.array([0, 0, g * (m1 / 2 + m2)])
-        #appl_force = np.array([cont_force_x, 0, bal_force])
-        mujoco.mju_add (appl_force, cont_force, des_bal_force)
-        # appl_force = des_bal_force.copy()
-        
+    #limit velocity if bigger than max and increasing in norm
+    # if np.linalg.norm(curr_vel) >= max_vel and np.dot(curr_vel.flatten(), ref_vel.flatten()) > 0:
+    #     print ("speed saturation applied")
+    #     ref_vel = max_vel / np.linalg.norm(curr_vel) * curr_vel 
 
-        
-        # des_prop_angle = math.atan(appl_force[0] / appl_force[2])
-        # des_prop_angle = math.atan2(appl_force[2], appl_force[0])
-        des_prop_angle = math.atan2(appl_force[0], appl_force[2])
-
-        
-        # curr_bar_eul = np.zeros(3)
-        # quat2eul(data.qpos[3:7], curr_bar_eul)
-        # curr_prop_angle = curr_bar_eul[1]
-        
-        # curr_prop_w = data.qvel[4]
-        
-        # prop_angle.append(curr_prop_angle)
-        # prop_w.append(curr_prop_w)
-        
-        ref_w = gamma_w_b * (des_prop_angle - x3)
-        
-        ref_w*= smoothing_fact
-        ref_w_max = np.linalg.norm(ref_w)
-        if ref_w_max > max_w:
-            ref_w*= max_w / ref_w_max
-            
-
-        
-        ang_err = ref_w - x7
-        
-        ref_acc_b = gamma_acc_b * ang_err
-        # ref_acc_b*= -1
-        
-        # print (ref_acc_b, max_rot_acc)
-        # ref_a_b_norm = abs(ref_acc_b)
-        # if ref_a_b_norm > max_rot_acc:
-        #     ref_acc_b*= max_rot_acc / ref_a_b_norm
-        
-        # goal_theta.append(des_prop_angle)
-        # goal_w_b.append(ref_w)
-        
-        
-        # ref_moment = ref_acc_b
-
-        # ref_moment*= I2
-        # ref_moment*=  
-        # ref_moment*= -1
-        
-        
-        # ref_acc_b = k_v_theta * (0 - x7) + k_err_theta * (des_prop_angle - x3)
-        
-        # goal_theta.append(des_prop_angle)
-        # goal_w_b.append(0)
-        
-        # rot_int = ref_acc_b * I_b / l_b
-        
-        des_M_bar = I_b * ref_acc_b
-
-        des_M_bar+= damp_coeff * (x7 - x8)
-
-        rot_int = des_M_bar / l_b
-
-        # rot_int*= 0
-        
-        data.actuator("propeller1").ctrl = rot_int
-        data.actuator("propeller2").ctrl = - rot_int
-        
-        
-        
-        # alignment_story.append(1)
-        appl_int = mujoco.mju_norm(appl_force) / 2 
-        data.actuator("propeller1").ctrl += appl_int
-        data.actuator("propeller2").ctrl += appl_int
-        
-        # if data.actuator("propeller1").ctrl > max_thrust:
-        #     data.actuator("propeller1").ctrl = max_thrust
-        # if data.actuator("propeller2").ctrl > max_thrust:
-        #     data.actuator("propeller2").ctrl = max_thrust
-        
-        if not do_control:
-            data.actuator("propeller1").ctrl = 0
-            data.actuator("propeller2").ctrl = 0
-        
-        # bal_int = mujoco.mju_norm(des_bal_force) / 2
-        # # data.actuator("propeller1").ctrl = 0.1 + bal_int
-        # # data.actuator("propeller2").ctrl = 0.1 + bal_int
-        # data.actuator("propeller1").ctrl = bal_int
-        # data.actuator("propeller2").ctrl = bal_int
-        
-        f1 = data.actuator("propeller1").ctrl.copy()
-        f2 = data.actuator("propeller2").ctrl.copy()
+    # curr_max_vel_comp = max(np.abs(curr_vel))
+    # if curr_max_vel_comp > max_vel:
 
 
-        curr_bar_eul = np.zeros(3)
-        quat2eul(data.qpos[3:7], curr_bar_eul)
-        data.body("prop_bar").xfrc_applied[3] = -100*curr_bar_eul[0]
+    
+    
+    
+    ref_acc = gamma_acc * (ref_vel - curr_vel)
+    
+    ref_acc+= des_acc
+    
+    ref_acc*= smoothing_fact
+    
+    
+    # ref_acc = gamma_acc * (ref_vel - curr_vel) * smoothing_fact
+    
+    # COM_err = curr_pos - des_pos
+    # COM_v_err = curr_vel - des_vel
+    
+    # goal_pos = np.append(goal_pos, des_pos.reshape((-1, 1)), axis = 1)
+    # goal_vel = np.append(goal_vel, ref_vel.reshape((-1, 1)), axis = 1)
+    
+    
+    # goal_pos = np.append(goal_pos, des_pos.reshape((-1, 1)), axis = 1)
+    # goal_vel = np.append(goal_vel, des_vel.reshape((-1, 1)), axis = 1)
+    
+    # ref_acc = k_v_COM * COM_v_err + k_err_COM * COM_err
+    # ref_acc*= -1
+    # ref_acc+= des_acc
+    # ref_acc*= 0
+    
+    com_cont_force = m_tot * ref_acc
+    # com_cont_force*= 0
+
+    # if data.sensor("feet_touch_sensor").data > ground_force_threshold:
+    # if data.sensor("feet_touch_sensor").data > ground_force_threshold and curr_phase == 0:
+    #     com_cont_force*= 0
+    
+    
+    # cont_force.shape = ((-1, 1))
+    # cont_force+= m_l1 * l_l1 / 2 * (a1_acc * np.array([- cos(x4), 0, sin(x4)]).reshape((-1, 1)) + x8**2 * np.array([sin(x4), 0, cos(x4)]).reshape((-1, 1)))
+    # cont_force/= 2
+    # cont_force*=-1
+    # cont_force*= 0
+    
+    
+    # des_a1 = x3.copy()
+    # des_w_1 = x7.copy()
+    des_a1 = 0
+    des_w_1 = 0
+    
+    
+    
+    # ref_w_1 = gamma_w_1 * (des_a1 - x4)
+    
+    # ref_w1_max = np.linalg.norm(ref_w_1)
+    # if ref_w1_max > max_w:
+    #     ref_w_1*= max_w / ref_w1_max
+
+    ref_w_1 = 0
+    
+    ref_a_1 = gamma_acc_1 * (ref_w_1 - x8) 
+    
+    # print (ref_a_1, max_rot_acc)
+    # ref_a1_norm = abs(ref_a_1)
+    # if ref_a1_norm > max_rot_acc:
+    #     ref_a_1*= max_rot_acc / ref_a1_norm
+    
+    # goal_alpha_1.append(des_a1)
+    # goal_w_1.append(ref_w_1)
+    
+    
+    # ref_a_1 = k_v_alpha_1 * (des_w_1 - x8)
+    # if curr_phase == 1:
+    #     ref_a_1+= K_err_alpha_1 * (des_a1 - x4)
+    # ref_a_1*= 0
+    # f_a1 = I_l1 / l_l1 * m_tot / m_l1 * ref_a_1
+    
+    des_M_1 = I_l1 * ref_a_1
+
+    des_M_1+= damp_coeff * (x8 - x7)
+    
+    # goal_alpha_1.append(des_a1)
+    # goal_w_1.append(x7.copy())
+    
+    # a1_cont_force = des_M_1 / l_l1 * m_tot / m_l1 * np.array([cos(x4), 0, -sin(x4)]).reshape((-1, 1))
+    a1_cont_force = des_M_1 / l_l1 * np.array([cos(x4), 0, -sin(x4)]).reshape((-1, 1))
+    # a1_cont_force*= -1
+    
+    # a1_cont_force*= 0
+    
+    if data.sensor("feet_touch_sensor").data > ground_force_threshold:
+        a1_cont_force*= 0
+        # a1_cont_force*= 0.2
+
+        
+    
+        
+    
+    mujoco.mju_add (cont_force, com_cont_force, a1_cont_force)
+    # cont_force*= 0
+    # cont_force*= smoothing_fact
+
+    if data.time < 0.5 and del_cont:
+        cont_force*= 0
+    
+    #cont_force = np.zeros(3)
+    #bal_force = np.array([0, 0, g * (m1 / 2 + m2)])
+    #appl_force = np.array([cont_force_x, 0, bal_force])
+    mujoco.mju_add (appl_force, cont_force, des_bal_force)
+    # appl_force = des_bal_force.copy()
+    
+
+    
+    # des_prop_angle = math.atan(appl_force[0] / appl_force[2])
+    # des_prop_angle = math.atan2(appl_force[2], appl_force[0])
+    des_prop_angle = math.atan2(appl_force[0], appl_force[2])
+
+    
+    # curr_bar_eul = np.zeros(3)
+    # quat2eul(data.qpos[3:7], curr_bar_eul)
+    # curr_prop_angle = curr_bar_eul[1]
+    
+    # curr_prop_w = data.qvel[4]
+    
+    # prop_angle.append(curr_prop_angle)
+    # prop_w.append(curr_prop_w)
+    
+    ref_w = gamma_w_b * (des_prop_angle - x3)
+    # ref_w*= -1
+    
+    # ref_w*= smoothing_fact
+    # ref_w_max = np.linalg.norm(ref_w)
+    # if ref_w_max > max_w:
+    #     ref_w*= max_w / ref_w_max
+
+    if abs(x7) > max_w and abs (ref_w) > abs (x7):
+        ref_w = max_w
+        
+
+    
+    ang_err = ref_w - x7
+    
+    ref_acc_b = gamma_acc_b * ang_err
+    # ref_acc_b*= -1
+    
+    # print (ref_acc_b, max_rot_acc)
+    # ref_a_b_norm = abs(ref_acc_b)
+    # if ref_a_b_norm > max_rot_acc:
+    #     ref_acc_b*= max_rot_acc / ref_a_b_norm
+    
+    # goal_theta.append(des_prop_angle)
+    # goal_w_b.append(ref_w)
+    
+    
+    # ref_moment = ref_acc_b
+
+    # ref_moment*= I2
+    # ref_moment*=  
+    # ref_moment*= -1
+    
+    
+    # ref_acc_b = k_v_theta * (0 - x7) + k_err_theta * (des_prop_angle - x3)
+    
+    # goal_theta.append(des_prop_angle)
+    # goal_w_b.append(0)
+    
+    # rot_int = ref_acc_b * I_b / l_b
+    
+    des_M_bar = I_b * ref_acc_b
+
+    des_M_bar+= damp_coeff * (x7 - x8)
+
+    rot_int = des_M_bar / l_b
+
+    # rot_int*= 0
+    
+    data.actuator("propeller1").ctrl = rot_int
+    data.actuator("propeller2").ctrl = - rot_int
+    
+    
+    
+    # alignment_story.append(1)
+    appl_int = mujoco.mju_norm(appl_force) / 2 
+    data.actuator("propeller1").ctrl += appl_int
+    data.actuator("propeller2").ctrl += appl_int
+    
+    # if data.actuator("propeller1").ctrl > max_thrust:
+    #     data.actuator("propeller1").ctrl = max_thrust
+    # if data.actuator("propeller2").ctrl > max_thrust:
+    #     data.actuator("propeller2").ctrl = max_thrust
+    
+    if not do_control:
+        data.actuator("propeller1").ctrl = 0
+        data.actuator("propeller2").ctrl = 0
+    
+    # bal_int = mujoco.mju_norm(des_bal_force) / 2
+    # # data.actuator("propeller1").ctrl = 0.1 + bal_int
+    # # data.actuator("propeller2").ctrl = 0.1 + bal_int
+    # data.actuator("propeller1").ctrl = bal_int
+    # data.actuator("propeller2").ctrl = bal_int
+    
+    f1 = data.actuator("propeller1").ctrl.copy()
+    f2 = data.actuator("propeller2").ctrl.copy()
+
+
+    curr_bar_eul = np.zeros(3)
+    quat2eul(data.qpos[3:7], curr_bar_eul)
+    data.body("prop_bar").xfrc_applied[3] = -100*curr_bar_eul[0]
         
         # data.body("prop_bar").xfrc_applied[4] = 0.1
         # data.body("leg_1").xfrc_applied[4] = 0.1
         
         # print ('control: ', f1, f2)
-    except Exception as e:
-        print (e)
+    # except Exception as e:
+    #     print (e)
+    #     exit()
     
     
     
@@ -1325,302 +1515,8 @@ def kb_callback(keycode):
         # print ("toggling fast run")
         global fast_run
         fast_run = not fast_run
-        
-#x = np.zeros(6)
-# def h_x (x, f1, f2):
-# def h_x (x):
-#     # global appl_force
-#     global f1, f2
-    
-    
-#     x1 = x[0, 0]
-#     x2 = x[1, 0]
-#     x3 = x[2, 0]
-#     x4 = x[3, 0]
-#     x5 = x[4, 0]
-#     x6 = x[5, 0]
-#     x7 = x[6, 0]
-#     x8 = x[7, 0]
-#     # est_damp = x[8, 0]
-    
-    
-#     g = - model.opt.gravity[2]
-    
-#     # l_p = math.sqrt(l_1**2 + l_2**2 / 4 - l_1 * l_2 * sin(x2))
-    
-    
-    
-    
-    
-    
-#     H = np.zeros ((6, 1))
-    
-#     I_b, I_l1 = compute_inertias(x)
-    
-#     x1_acc, z1_acc, theta_acc, alpha_1_acc = compute_accelerations(x, np.array([[f1], [f2]]))
-    
-#     #alpha = x4
-#     H [0] = x7
-    
-#     H [1] = x1_acc
-    
-#     H [2] = z1_acc
-      
-#     H [3] = x8
-    
-#     H [4] = x8**2 * sin(x4)
-#     # H [4] = - x8**2 * sin(x4)
-#     # H [4] = 0
-#     H [4]-= alpha_1_acc * cos(x4)
-#     # H [4]+= alpha_1_acc * cos(x4)
-#     H [4]*= l_l1 / 2 
-    
-#     H [5] = x8**2 * cos(x4)
-#     H [5]+= alpha_1_acc * sin(x4)
-#     H [5]*= l_l1 / 2
 
-#     # #alpha = x4, IMU on pfropeller
-#     # prop_acc_x = - l_b / 2 * (theta_acc * sin(x3) + x7**2 * cos(x3))
-#     # prop_acc_z = l_b / 2 * (- theta_acc * cos(x3) + x7**2 * sin(x3))
-    
-#     # H [0] = x7
-    
-#     # H [1] = x1_acc
-#     # H [1]+= prop_acc_x
-    
-#     # H [2] = z1_acc
-#     # H [2]+= prop_acc_z
-      
-#     # H [3] = x8
-    
-#     # H [4] = x8**2 * sin(x4)
-#     # # H [4] = - x8**2 * sin(x4)
-#     # # H [4] = 0
-#     # H [4]-= alpha_1_acc * cos(x4)
-#     # # H [4]+= alpha_1_acc * cos(x4)
-#     # H [4]*= l_l1 / 2 
-#     # H [4]+= x1_acc
-    
-#     # H [5] = x8**2 * cos(x4)
-#     # H [5]+= alpha_1_acc * sin(x4)
-#     # H [5]*= l_l1 / 2 
-#     # H [5]+= z1_acc
-    
-#     # H [4]+= H[1]
-#     # H [5]+= H[2]
-    
-#     # #alpha = x4 + x3
-#     # H [0] = x7
-    
-#     # H [1] = x1_acc
-    
-#     # H [2] = z1_acc
-      
-#     # H [3] = x8 + x7
-    
-#     # H [4] = (x7 + x8)**2 * sin(x4 + x3)
-#     # H [4]-= alpha_1_acc * cos(x3 + x4)
-#     # H [4]*= l_l1 / 2 
-    
-#     # H [5] = (x7 + x8)**2 * cos(x3 + x4)
-#     # H [5]+= alpha_1_acc * sin(x3 + x4)
-#     # H [5]*= l_l1 / 2 
-    
-#     return H.reshape((-1, 1)) 
 
-# def H_jac (x):
-#     global f1, f2
-#     g = - model.opt.gravity[2]
-#     #global appl_force
-    
-#     x1 = x[0, 0]
-#     x2 = x[1, 0]
-#     x3 = x[2, 0]
-#     x4 = x[3, 0]
-#     x5 = x[4, 0]
-#     x6 = x[5, 0]
-#     x7 = x[6, 0]
-#     x8 = x[7, 0]
-#     # damp_coeff = x[8, 0]
-#     # est_l1 = x5
-#     # est_l2 = x6
-
-#     # H = np.zeros((6, 4))
-#     H = np.zeros((6, 8))
-#     # H = np.zeros((6, 9))
-#     # H_test = np.zeros((3, 4))
-    
-#     I_b, I_l1 = compute_inertias(x)
-    
-#     # x1_acc, z1_acc, theta_acc, alpha_1_acc = compute_accelerations(x)
-#     # d_a3 = (f1 + f2) / I_l1 * m_l1 / m_tot * l_l1 / 2 * cos(x[2, 0] - x[3, 0])
-#     # d_a4 = - d_a3
-#     # if data.sensor("feet_touch_sensor").data[0] > 0.01: #groundedn model
-#     #     d_a4+= m_l1 * g * l_l1 / 2 * cos(x[3, 0]) * (1 - m_l1 / (2 * m_tot)) / I_l1
-#     # # d_a4+= data.sensor("feet_touch_sensor").data[0] * l_l1 * cos(x4) * (1 - m_l1 / (2 * m_tot)) / I_l1
-    
-#     # d_a7 = - damp_coeff / I_l1
-#     # d_a8 = damp_coeff / I_l1
-    
-#     # d_a7 = damp_coeff / I_l1
-#     # d_a8 = - damp_coeff / I_l1
-    
-    
-#     H [0, 6] = 1
-            
-        
-#     H [3, 7] = 1
-
-#     if data.sensor("feet_touch_sensor").data[0] < 0.001 or (not ground_model_comp):
-    
-#         H [1, 2] = (f1 + f2) / m_tot * (cos(x3) + m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * cos(x4) * cos(x3 - x4))
-#         #-sin(x4)*sin(x3-x4)-cos(x4)*cos(x3 - x4) = - cos (x3 - 2x4)
-#         H [1, 3] = m_l1 / m_tot * l_l1 / 2 * (- x8**2 * cos(x4) - (f1 + f2) / m_tot * m_l1 / I_l1 * l_l1 / 2 * cos(x3 - 2*x4) + damp_coeff / I_l1 * (x8 - x7) * sin(x4))
-        
-#         H [1, 6] = m_l1 / m_tot * l_l1 / 2 * damp_coeff / I_l1 * cos(x4)
-        
-#         H [1, 7] = m_l1 / m_tot * l_l1 * (- x8 * sin(x4) - damp_coeff / I_l1 * cos(x4) / 2)
-        
-#         # H [1, 8] = - cos(x4) * m_l1 / m_tot * l_l1 / 2 * (x8 - x7) / I_l1
-        
-        
-#         H [2, 2] = (f1 + f2) / m_tot * (- sin(x3) - m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * sin(x4) * cos(x3 - x4))
-#         #-cos(x4)*sin(x3-x4)+sin(x4)*cos(x3 - x4) = - sin (x3 - 2x4)
-#         H [2, 3] = m_l1 / m_tot * l_l1 / 2 * (x8**2 * sin(x4) - (f1 + f2) / m_tot * m_l1 / I_l1 * l_l1 / 2 * sin(x3 - 2*x4) + damp_coeff / I_l1 * (x8 - x7) * cos(x4))
-        
-#         H [2, 6] = - m_l1 / m_tot * l_l1 / 2 * damp_coeff / I_l1 * sin(x4)
-        
-#         H [2, 7] = m_l1 / m_tot * l_l1 * (- x8 * cos(x4) + damp_coeff / I_l1 * sin(x4) / 2)
-        
-#         # H [2, 8] = sin(x4) * m_l1 / m_tot * l_l1 / 2 * (x8 - x7) / I_l1
-        
-        
-#         H [4, 2] = - (f1 + f2) / I_l1 * m_l1 / m_tot * l_l1**2 / 4 * cos(x4) * cos(x3 - x4)
-#         #sin(x4) * sin(x3 - x4) + cos(x4) * cos(x3 - x4) = cos(x3 - 2x4)
-#         H [4, 3] = l_l1 / 2 * (x8**2 * cos(x4) + (f1 + f2) / I_l1 * m_l1 / m_tot * l_l1 / 2 * cos(x3 - 2*x4) - damp_coeff / I_l1 * (x8 - x7) * sin(x4))
-        
-#         H [4, 6] = - l_l1 / 2 * damp_coeff / I_l1 * cos(x4)
-            
-#         H [4, 7] = l_l1 * (x8 * sin(x4) + damp_coeff / I_l1 * cos(x4) / 2)
-        
-#         # H [4, 8] = cos(x4) * l_l1 / 2 * (x8 - x7) / I_l1
-        
-        
-#         H [5, 2] = (f1 + f2) / I_l1 * m_l1 / m_tot * l_l1**2 / 4 * sin(x4) * cos(x3 - x4)
-#         #cos(x4)*sin(x3-x4)-sin(x4)*cos(x3-x4) = sin(x3-2x4)
-#         H [5, 3] = l_l1 / 2 * (- x8**2 * sin(x4) + (f1 + f2) / I_l1 * m_l1 / m_tot * l_l1 / 2 * sin(x3 - 2*x4) - damp_coeff / I_l1 * (x8 - x7) * cos(x4))
-        
-#         H [5, 6] = l_l1 / 2 * damp_coeff / I_l1 * sin(x4)
-        
-#         H [5, 7] = l_l1 * (x8 * cos(x4) - damp_coeff / I_l1 * sin(x4) / 2)
-
-#     else:
-#         H [1, 2] = l_l1**2 / I_l1 * (f1 + f2) * cos(x3 - x4) * cos(x4)
-#         #-sin(x4)*sin(x3-x4)-cos(x4)*cos(x3 - x4) = - cos (x3 - 2x4)
-#         H [1, 3] = l_l1**2 / I_l1 * (g * l_l1 * cos(2 * x4) * (m_tot - m_l1 / 2) + (f1 + f2) * (- cos(x3 - x4) * cos(x4) - sin(x3 - x4) * sin(x4))) + damp_coeff * (x8- x7) * sin(x4) * l_l1 / I_l1 - l_l1 * x8**2 * cos(x4)
-        
-#         H [1, 6] = damp_coeff * l_l1 / I_l1
-        
-#         H [1, 7] = - 2 * l_l1 * x8 * sin(x4) - damp_coeff * l_l1 / I_l1
-        
-#         # H [1, 8] = - cos(x4) * m_l1 / m_tot * l_l1 / 2 * (x8 - x7) / I_l1
-        
-        
-#         H [2, 2] = - l_l1**2 / I_l1 * (f1 + f2) * cos(x3 - x4) * sin(x4)
-#         #-cos(x4)*sin(x3-x4)+sin(x4)*cos(x3 - x4) = - sin (x3 - 2x4)
-#         H [2, 3] = - l_l1 / I_l1 * (- damp_coeff * (x8 - x7) * cos(x4) + l_l1 * (g * (m_tot - m_l1 / 2) * sin(2 * x4) + (f1 + f2) * (- cos(x3 - x4) * sin(x4) + sin(x3 - x4) * cos(x4)))) + l_l1 * x8**2 * sin(x4)
-        
-#         H [2, 6] = - l_l1 / I_l1 * damp_coeff
-        
-#         H [2, 7] = - 2 * l_l1 * x8 * cos(x4) + l_l1 / I_l1 * damp_coeff
-        
-#         # H [2, 8] = sin(x4) * m_l1 / m_tot * l_l1 / 2 * (x8 - x7) / I_l1
-        
-#         # on ground h5 = h2 / 2 - h2 = -h2 / 2, same reasoning between h6 and h3
-#         H [4, :] = - 1 / 2 * H [1, :]
-
-#         H [5, :] = - 1 / 2 * H [2, :] 
-        
-    
-#     # if ground_model_comp and data.sensor("feet_touch_sensor").data > 0.01: #ground model additions
-#     #     H [1, 3]+= g * m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * cos(2 * x4) * (1 - m_l1 / (2 * m_tot))
-        
-#     #     H [2, 3]-= g * m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * sin(2 * x4) * (1 - m_l1 / (2 * m_tot))
-        
-#     #     H [4, 3]-= g * m_l1 / I_l1 * l_l1**2 / 4 * cos(2 * x4) * (1 - m_l1 / (2 * m_tot))
-        
-#     #     H [5, 3]+= g * m_l1 / I_l1 * l_l1**2 / 4 * sin(2 * x4) * (1 - m_l1 / (2 * m_tot))
-    
-#     # H [5, 8] = - sin(x4) * l_l1 / 2 * (x8 - x7) / I_l1
-    
-    
-#     # H [4, :]+= H [1, :]
-#     # H [5, :]+= H [2, :]
-    
-    
-#     # H [1, 2]+= l_b / 2 * (- theta_acc * cos(x3) + x7**2 * sin(x3))
-#     # H [1, 6] = - l_b * x7 * cos(x3)
-    
-#     # H [2, 2]+= l_b / 2 * (theta_acc * sin(x3) + x7**2 * cos(x3))
-#     # H [2, 6] = l_b * x7 * sin(x3)
-    
-#     return H
-
-    
-# def compute_z (data, x):
-#     ang_data_1 = data.sensor ("IMU_1_gyro").data[1].copy() 
-                
-#     acc_data_1 = data.sensor ("IMU_1_acc").data.copy()
-    
-#     ang_data_2 = data.sensor("IMU_2_gyro").data[1].copy()
-    
-#     acc_data_2 = data.sensor("IMU_2_acc").data.copy()
-    
-#     # print (acc_data, data.cacc[1])
-    
-    
-    
-    
-#     ang_data_1 += random.gauss(0, model.sensor("IMU_1_gyro").noise[0])
-#     for i in range (0, 3):
-#         acc_data_1 [i] += random.gauss(0, model.sensor("IMU_1_acc").noise[0])
-    
-#     ang_data_2 += random.gauss(0, model.sensor("IMU_2_gyro").noise[0])
-#     for i in range (0, 3):
-#         acc_data_2 [i] += random.gauss(0, model.sensor("IMU_2_acc").noise[0])
-    
-#     bar_eul = np.zeros(3)
-#     quat2eul(data.qpos[3:7], bar_eul)
-#     q_est_1 = bar_eul[1]
-    
-#     q_est_2 = data.qpos[7] + bar_eul[1]
-#     # q_est_2 = data.qpos[7]
-    
-    
-    
-    
-#     R1 = np.array([[math.cos(q_est_1), 0, math.sin(q_est_1)], [0, 1, 0], [-math.sin(q_est_1), 0, math.cos(q_est_1)]])
-    
-#     R2 = np.array([[math.cos(q_est_2), 0, math.sin(q_est_2)], [0, 1, 0], [-math.sin(q_est_2), 0, math.cos(q_est_2)]])
-    
-    
-#     mujoco.mju_mulMatVec (acc_data_1, R1, acc_data_1.copy())
-    
-#     mujoco.mju_mulMatVec (acc_data_2, R2, acc_data_2.copy())
-    
-    
-    
-    
-#     acc_data_1 += model.opt.gravity
-#     acc_data_2 += model.opt.gravity
-    
-#     acc_data_2 -= acc_data_1    
-    
-    
-#     z = np.array([ang_data_1, acc_data_1[0], acc_data_1[2], ang_data_2, acc_data_2[0], acc_data_2[2]])
-    
-    
-#     return z.reshape((-1, 1))
 
 def h_x (x):
     # global appl_force
@@ -2020,669 +1916,555 @@ cont_forces = np.zeros(6)
         
 # print ("starting viewer")
 # print (model.opt.timestep)
-try:
+# try:
 # with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as viewer:
-    with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_left_ui = False, show_right_ui = False) as viewer:
-        
-        viewer.lock()
-        # print ("viewer launched")
-        viewer.opt.frame = mujoco.mjtFrame.mjFRAME_CONTACT
-        # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_WORLD
-        # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_SITE
-        # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_GEOM
-        
-        viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = True
-        viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTSPLIT] = True
-        # viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_] = True
-        
-        # print(viewer.opt.label)
-        # viewer.opt.label = mujoco.mjtLabel.mjLABEL_CONTACTFORCE
-        
-        # print (dir(model.vis))
-        # print(dir(viewer))
-        # print(dir(viewer._opt))
-        
+with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_left_ui = False, show_right_ui = False) as viewer:
+    
+    viewer.lock()
+    # print ("viewer launched")
+    viewer.opt.frame = mujoco.mjtFrame.mjFRAME_CONTACT
+    # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_WORLD
+    # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_SITE
+    # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_GEOM
+    
+    viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = True
+    viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTSPLIT] = True
+    # viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_] = True
+    
+    # print(viewer.opt.label)
+    # viewer.opt.label = mujoco.mjtLabel.mjLABEL_CONTACTFORCE
+    
+    # print (dir(model.vis))
+    # print(dir(viewer))
+    # print(dir(viewer._opt))
+    
 
+    
+    # print (dir(data))
+    # print (dir(data.contact[0]))
+    #print (int(mujoco.mjtFrame.mjFRAME_BODY), int(mujoco.mjtFrame.mjFRAME_GEOM), int(mujoco.mjtFrame.mjFRAME_SITE))
+    # print (int(mujoco.mjtFrame.mjFRAME_CONTACT), int(mujoco.mjtFrame.mjFRAME_WORLD), int(mujoco.mjtFrame.mjFRAME_CONTACT | mujoco.mjtFrame.mjFRAME_WORLD))
+    
+    """ for i in range (model.nsite + model.njnt):
+        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn) """
+    
+    # print (viewer.user_scn.maxgeom)
+    # print (viewer.user_scn.ngeom)
+    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
+    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
+    
+    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
+    
+    #cont force displayer
+    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
+    
+    #des_pose displayer
+    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
+    
+    #COM_displayer
+    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
+    
+    #second IMU displayer
+    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
+    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
+    
+    #virtual aplied force
+    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
+    #bar orientation
+    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
+    
+    
+    mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
+    
+    
+    # print (dir(viewer))
+    # print (viewer.user_scn.maxgeom)
+    # print (viewer.user_scn.ngeom)
+    # print (dir(viewer.user_scn))
+    
+    # print(dir(model))
+    # print(dir(model.tex_data))
+    
+    #print ('simulation setup completed')
+    viewer.sync()
+    
+    # print ("starting loop")
+    #print (mujoco.mjtCatBit.mjCAT_ALL)
+    # while viewer.is_running() and (not exit) :
+    while viewer.is_running() and (not exit) and data.time < 60:
+    # while viewer.is_running() and (not exit) and data.time < 30:
+    # while viewer.is_running() and (not exit) and data.time < 30 and data.sensor("feet_touch_sensor").data < 0.01:
+        # if data.time > 0.348:
+        #     print (H_jac(ekf_theta.x))
+        #     print('P:\n', ekf_theta.P)
+        #     break
+        step_start = time.time()
+        #mujoco.mj_forward(model, data)
+        #print ('running iteration')
         
-        # print (dir(data))
-        # print (dir(data.contact[0]))
-        #print (int(mujoco.mjtFrame.mjFRAME_BODY), int(mujoco.mjtFrame.mjFRAME_GEOM), int(mujoco.mjtFrame.mjFRAME_SITE))
-        # print (int(mujoco.mjtFrame.mjFRAME_CONTACT), int(mujoco.mjtFrame.mjFRAME_WORLD), int(mujoco.mjtFrame.mjFRAME_CONTACT | mujoco.mjtFrame.mjFRAME_WORLD))
         
-        """ for i in range (model.nsite + model.njnt):
-            mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn) """
-        
-        # print (viewer.user_scn.maxgeom)
-        # print (viewer.user_scn.ngeom)
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-        
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-        
-        #cont force displayer
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-        
-        #des_pose displayer
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-        
-        #COM_displayer
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-        
-        #second IMU displayer
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-        
-        #virtual aplied force
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-        #bar orientation
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-        
-        
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-        
-        
-        # print (dir(viewer))
-        # print (viewer.user_scn.maxgeom)
-        # print (viewer.user_scn.ngeom)
-        # print (dir(viewer.user_scn))
-        
-        # print(dir(model))
-        # print(dir(model.tex_data))
-        
-        #print ('simulation setup completed')
-        viewer.sync()
-        
-        # print ("starting loop")
-        #print (mujoco.mjtCatBit.mjCAT_ALL)
-        # while viewer.is_running() and (not exit) :
-        while viewer.is_running() and (not exit) and data.time < 60:
-        # while viewer.is_running() and (not exit) and data.time < 30:
-        # while viewer.is_running() and (not exit) and data.time < 30 and data.sensor("feet_touch_sensor").data < 0.01:
-            # if data.time > 0.348:
-            #     print (H_jac(ekf_theta.x))
-            #     print('P:\n', ekf_theta.P)
-            #     break
-            step_start = time.time()
-            #mujoco.mj_forward(model, data)
-            #print ('running iteration')
+        if not pause or step:
+            step = False
+            with viewer.lock():
+                # print (data.qpos)
+                # data.qvel[6] = 0
+                # mujoco.mj_step(model, data)
+                # f1 = data.actuator("propeller1").ctrl.copy()
+                # f2 = data.actuator("propeller2").ctrl.copy()
+                f1 = data.actuator("propeller1").ctrl[0]
+                f2 = data.actuator("propeller2").ctrl[0]
+                # print(f1, f2)
+                mujoco.mj_forward(model, data)
+                # mujoco.mj_step1(model, data)
+                # f1 = data.actuator("propeller1").ctrl.copy()
+                # f2 = data.actuator("propeller2").ctrl.copy()
+                
+                # print (enumerate(data.contact))
+                
+                
+                # print (data.time)
+                
+                
+                # for i, cont in enumerate(data.contact):
+                #     # print(dir(cont))
+                #     # print (dir(cont.geom[0]))
+                #     # if cont.geom[0] == data.geom("leg_1_stick").id or cont.geom[1] == data.geom("leg_1_stick").id:
+                #     # if data.geom("leg_1_stick").id in cont.geom:
+                #     if data.geom("floor").id in cont.geom:
+                #         mujoco.mj_contactForce(model, data, i, cont_forces)
+                #         print (cont_forces)
+                #         print (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[0]),\
+                #                 mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[1]))
+                #         # print (cont_forces[0] / cont_forces [1])
+                #         # break
             
-            
-            if not pause or step:
-                step = False
-                with viewer.lock():
-                    # print (data.qpos)
-                    # data.qvel[6] = 0
-                    # mujoco.mj_step(model, data)
-                    # f1 = data.actuator("propeller1").ctrl.copy()
-                    # f2 = data.actuator("propeller2").ctrl.copy()
-                    f1 = data.actuator("propeller1").ctrl[0]
-                    f2 = data.actuator("propeller2").ctrl[0]
-                    # print(f1, f2)
-                    mujoco.mj_forward(model, data)
-                    # mujoco.mj_step1(model, data)
-                    # f1 = data.actuator("propeller1").ctrl.copy()
-                    # f2 = data.actuator("propeller2").ctrl.copy()
-                    
-                    # print (enumerate(data.contact))
-                    
-                    
-                    # print (data.time)
-                    
-                    
-                    # for i, cont in enumerate(data.contact):
-                    #     # print(dir(cont))
-                    #     # print (dir(cont.geom[0]))
-                    #     # if cont.geom[0] == data.geom("leg_1_stick").id or cont.geom[1] == data.geom("leg_1_stick").id:
-                    #     # if data.geom("leg_1_stick").id in cont.geom:
-                    #     if data.geom("floor").id in cont.geom:
-                    #         mujoco.mj_contactForce(model, data, i, cont_forces)
-                    #         print (cont_forces)
-                    #         print (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[0]),\
-                    #                 mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[1]))
-                    #         # print (cont_forces[0] / cont_forces [1])
-                    #         # break
+
+                # print (z_sim.reshape((1, -1)))
+                # print (data.qvel)
+                
+                #mujoco.mj_step(model, data)
+                
+                curr_bar_eul = np.zeros(3)
+                quat2eul(data.qpos[3:7], curr_bar_eul)
+                sim_state = np.array([data.qpos[0], data.qpos[2], curr_bar_eul[1], data.qpos[7] + curr_bar_eul[1], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6] + data.qvel[4]]).reshape((-1, 1))
+                # sim_state = np.array([data.qpos[0], data.qpos[2], curr_bar_eul[1], data.qpos[7] + curr_bar_eul[1], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6] + data.qvel[4], model.joint("leg_1_joint").damping[0]]).reshape((-1, 1))
+                
+                sim_time.append (data.time)
+                
+                sim_x1.append(data.qpos[0])
+                sim_z1.append(data.qpos[2])
+                sim_eul = np.zeros(3)
+                quat2eul(data.qpos[3:7], sim_eul)
+                sim_theta.append(sim_eul[1])
+                # sim_alpha_1.append(data.qpos[7])
+                sim_alpha_1.append(data.qpos[7] + sim_eul[1])
+                
+                est_x1.append(ekf_theta.x[0, 0])
+                est_z1.append(ekf_theta.x[1, 0])
+                est_theta.append(ekf_theta.x[2, 0])
+                est_alpha_1.append(ekf_theta.x[3, 0])
+                
+                sim_x1_vel.append(data.qvel[0])
+                sim_z1_vel.append(data.qvel[2])
+                sim_theta_vel.append(data.qvel[4])
+                # sim_alpha_1_vel.append(data.qvel[6])
+                sim_alpha_1_vel.append(data.qvel[6] + data.qvel[4])
+                
+                est_x1_vel.append(ekf_theta.x[4, 0])
+                est_z1_vel.append(ekf_theta.x[5, 0])
+                est_theta_vel.append(ekf_theta.x[6, 0])
+                est_alpha_1_vel.append(ekf_theta.x[7, 0])
+                
+                sim_x1_acc.append(data.qacc[0])
+                sim_z1_acc.append(data.qacc[2])
+                sim_theta_acc.append(data.qacc[4])
+                sim_alpha_1_acc.append(data.qacc[6] + data.qacc[4])
+                # sim_alpha_1_acc.append(data.qacc[6])
+                
+                eul_sim = np.zeros(3)
+                quat2eul(data.qpos[3:7], eul_sim)
+                # x_sim = np.array([data.qpos[0], data.qpos[2], eul_sim[1], data.qpos[7], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6]]).reshape((-1, 1))
+                
+                x_sim = np.array([data.qpos[0], data.qpos[2], eul_sim[1], data.qpos[7] + eul_sim[1], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6] + data.qvel[4]]).reshape((-1, 1))
+                # x_sim = np.array([data.qpos[0], data.qpos[2], eul_sim[1], data.qpos[7] + eul_sim[1], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6] + data.qvel[4], model.joint("leg_1_joint").damping[0]]).reshape((-1, 1))
+                f_u = np.array([[f1], [f2]])
+                # print ('logging: ', f1, f2)
+                # calc_x1_acc, calc_z1_acc, calc_theta_acc, calc_alpha_1_acc = compute_accelerations(x_sim, f_u)
+                calc_x1_acc, calc_z1_acc, calc_theta_acc, calc_alpha_1_acc = compute_accelerations(ekf_theta.x, f_u)
+                
+                # sim_x1_acc.append(data.qacc[0])
+                # sim_z1_acc.append(data.qacc[2])
+                # sim_theta_acc.append(data.qacc[4])
+                # sim_alpha_1_acc.append(data.qacc[6])
+                
+                # eul_sim = np.zeros(3)
+                # quat2eul(data.qpos[3:7], eul_sim)
+                # x_sim = np.array([data.qpos[0], data.qpos[2], eul_sim[1], data.qpos[7], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6]]).reshape((-1, 1))
+                # f_u = np.array([[f1], [f2]])
+                # calc_x1_acc, calc_z1_acc, calc_theta_acc, calc_alpha_1_acc = compute_accelerations(x_sim, f_u)
+                # # calc_x1_acc, calc_z1_acc, calc_theta_acc, calc_alpha_1_acc = compute_accelerations(ekf_theta.x, f_u)
+                
+                # print (x_sim[6, 0] - x_sim[7, 0], data.qvel[6])
+
+                est_x1_acc.append(calc_x1_acc)
+                est_z1_acc.append(calc_z1_acc)
+                est_theta_acc.append(calc_theta_acc)
+                est_alpha_1_acc.append(calc_alpha_1_acc)
+                
+                
+                
+                z_sim = compute_z(data, sim_state)
+                sim_meas = np.append(sim_meas, z_sim.reshape((-1, 1)), axis = 1)
+                est_meas = np.append(est_meas, h_x(ekf_theta.x).reshape((-1, 1)), axis = 1)
+                # est_meas = np.append(est_meas, h_x(sim_state).reshape((-1, 1)), axis = 1)
+                # est_meas = np.append(est_meas, h_est.reshape((-1, 1)), axis = 1)
+                
+                f1_story.append(f1)
+                f2_story.append(f2)
+                
+                ground_force.append(data.sensor("feet_touch_sensor").data[0].copy())
+                
+                COM_pos = np.append(COM_pos, curr_pos.reshape((-1, 1)), axis = 1)
+                COM_vel = np.append(COM_vel, curr_vel.reshape((-1, 1)), axis = 1)
+                
+                
+                
+                # alpha_1_vel = x_sim[7, 0]
+                # alpha_1 = x_sim[3, 0]
+
+
+                alpha_1_vel = ekf_theta.x[7, 0]
+                alpha_1 = ekf_theta.x[3, 0]
+                
+                # print (calc_x1_acc, calc_z1_acc, calc_alpha_1_acc, alpha_1_vel, alpha_1)
+                curr_acc = np.array([calc_x1_acc, 0, calc_z1_acc]).reshape((-1, 1)) + m_l1 / m_tot * l_l1 / 2 * (alpha_1_vel**2 * np.array([sin(alpha_1), 0, cos(alpha_1)]).reshape((-1, 1)) + calc_alpha_1_acc * np.array([-cos(alpha_1), 0, sin(alpha_1)]).reshape((-1, 1)))
+                
+                COM_acc = np.append(COM_acc, curr_acc.reshape((-1, 1)), axis = 1)
+                
+                goal_pos = np.append(goal_pos, des_pos.reshape((-1, 1)), axis = 1)
+                # goal_vel = np.append(goal_vel, des_vel.reshape((-1, 1)), axis = 1)
+                goal_vel = np.append(goal_vel, ref_vel.reshape((-1, 1)), axis = 1)
+                
+                goal_alpha_1.append(des_a1)
+                # goal_w_1.append(x7.copy())
+                # goal_w_1.append(des_w_1)
+                goal_w_1.append(ref_w_1)
+                
+                goal_theta.append(des_prop_angle)
+                # goal_w_b.append(0)
+                goal_w_b.append(ref_w)
+                
+                
+                # gps_meas = np.append(gps_meas, z_gps, axis = 1)
+                gps_meas = np.append(gps_meas, compute_z_gps(data, x_sim).reshape((-1, 1)), axis = 1)
+                # gps_sim = np.append(gps_sim, h_gps(x_sim), axis= 1)
+                gps_sim = np.append(gps_sim, h_gps(ekf_theta.x), axis = 1)
+                
+                
+                # gps_meas = np.append(gps_meas, data.sensor("gps").data.reshape((-1, 1)), axis = 1)
+                # gps_sim = np.append(gps_sim, data.qpos[:3].copy().reshape((-1, 1)), axis= 1)
+                
+                
+                # vel_meas = np.append(vel_meas, z_vel, axis = 1)
+                vel_meas = np.append(vel_meas, compute_z_vel(data, x_sim).reshape((-1, 1)), axis = 1)
+                # vel_sim = np.append(vel_sim, h_vel(x_sim), axis= 1)
+                vel_sim = np.append(vel_sim, h_vel(ekf_theta.x), axis= 1)
+                
+                # damping_story.append(ekf_theta.x[8, 0].copy())
+                
+                phase_story.append(curr_phase)
+                
+                smoothing_story.append(smoothing_fact)
+
+                phase_start_story.append(phase_start)
+
+                f_cont_com = np.append(f_cont_com, com_cont_force.reshape((-1, 1)), axis = 1)
+
+                M_cont_leg.append(des_M_1)
+                M_cont_bar.append(des_M_bar)
+
+                # cont_forces = np.zeros(6)
+                mujoco.mju_zero(cont_forces)
+
+                curr_contact = 0
+
+                for i, cont in enumerate(data.contact):
+                    # print(dir(cont))
+                    # print (dir(cont.geom[0]))
+                    # if cont.geom[0] == data.geom("leg_1_stick").id or cont.geom[1] == data.geom("leg_1_stick").id:
+                    # if data.geom("leg_1_stick").id in cont.geom:
+                    if data.geom("floor").id in cont.geom:
+                        mujoco.mj_contactForce(model, data, i, cont_forces)
+                        # print (cont_forces)
+                        # print (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[0]),\
+                        #         mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[1]))
+                        # print (cont_forces[0] / cont_forces [1])
+                        curr_contact = 1
+                        
+                        break
+                
+                ground_force_vec = np.append(ground_force_vec, cont_forces[0:3].copy().reshape((-1, 1)), axis = 1)
+
+                ground_contact.append(curr_contact)
+
+                curr_foot_vel = np.zeros(6)
+                foot_site_id = data.site("feet").id
+                mujoco.mj_objectVelocity(model, data, mujoco.mjtObj.mjOBJ_SITE, foot_site_id, curr_foot_vel, 0)
+                # print(curr_foot_vel)
+                # sim_foot_vel = np.append(sim_foot_vel, curr_foot_vel[0:3].copy().reshape((-1, 1)), axis = 1)
+                sim_foot_vel = np.append(sim_foot_vel, curr_foot_vel[3:].copy().reshape((-1, 1)), axis = 1)
+                
+                # P = ekf_theta.P.copy()
+                # p_diag = np.array([P[0, 0], P[1, 1], P[2, 2]]).reshape((3, 1))
+                
+                # mujoco.mj_forward(model, data)
+                
+                # covar_values = np.append(covar_values, p_diag).reshape((3, -1))
+                
                 
 
-                    # print (z_sim.reshape((1, -1)))
-                    # print (data.qvel)
-                    
-                    #mujoco.mj_step(model, data)
-                    
-                    curr_bar_eul = np.zeros(3)
-                    quat2eul(data.qpos[3:7], curr_bar_eul)
-                    sim_state = np.array([data.qpos[0], data.qpos[2], curr_bar_eul[1], data.qpos[7] + curr_bar_eul[1], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6] + data.qvel[4]]).reshape((-1, 1))
-                    # sim_state = np.array([data.qpos[0], data.qpos[2], curr_bar_eul[1], data.qpos[7] + curr_bar_eul[1], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6] + data.qvel[4], model.joint("leg_1_joint").damping[0]]).reshape((-1, 1))
-                    
-                    sim_time.append (data.time)
-                    
-                    sim_x1.append(data.qpos[0])
-                    sim_z1.append(data.qpos[2])
-                    sim_eul = np.zeros(3)
-                    quat2eul(data.qpos[3:7], sim_eul)
-                    sim_theta.append(sim_eul[1])
-                    # sim_alpha_1.append(data.qpos[7])
-                    sim_alpha_1.append(data.qpos[7] + sim_eul[1])
-                    
-                    est_x1.append(ekf_theta.x[0, 0])
-                    est_z1.append(ekf_theta.x[1, 0])
-                    est_theta.append(ekf_theta.x[2, 0])
-                    est_alpha_1.append(ekf_theta.x[3, 0])
-                    
-                    sim_x1_vel.append(data.qvel[0])
-                    sim_z1_vel.append(data.qvel[2])
-                    sim_theta_vel.append(data.qvel[4])
-                    # sim_alpha_1_vel.append(data.qvel[6])
-                    sim_alpha_1_vel.append(data.qvel[6] + data.qvel[4])
-                    
-                    est_x1_vel.append(ekf_theta.x[4, 0])
-                    est_z1_vel.append(ekf_theta.x[5, 0])
-                    est_theta_vel.append(ekf_theta.x[6, 0])
-                    est_alpha_1_vel.append(ekf_theta.x[7, 0])
-                    
-                    sim_x1_acc.append(data.qacc[0])
-                    sim_z1_acc.append(data.qacc[2])
-                    sim_theta_acc.append(data.qacc[4])
-                    sim_alpha_1_acc.append(data.qacc[6] + data.qacc[4])
-                    # sim_alpha_1_acc.append(data.qacc[6])
-                    
-                    eul_sim = np.zeros(3)
-                    quat2eul(data.qpos[3:7], eul_sim)
-                    # x_sim = np.array([data.qpos[0], data.qpos[2], eul_sim[1], data.qpos[7], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6]]).reshape((-1, 1))
-                    
-                    x_sim = np.array([data.qpos[0], data.qpos[2], eul_sim[1], data.qpos[7] + eul_sim[1], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6] + data.qvel[4]]).reshape((-1, 1))
-                    # x_sim = np.array([data.qpos[0], data.qpos[2], eul_sim[1], data.qpos[7] + eul_sim[1], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6] + data.qvel[4], model.joint("leg_1_joint").damping[0]]).reshape((-1, 1))
-                    f_u = np.array([[f1], [f2]])
-                    # print ('logging: ', f1, f2)
-                    calc_x1_acc, calc_z1_acc, calc_theta_acc, calc_alpha_1_acc = compute_accelerations(x_sim, f_u)
-                    # calc_x1_acc, calc_z1_acc, calc_theta_acc, calc_alpha_1_acc = compute_accelerations(ekf_theta.x, f_u)
-                    
-                    # sim_x1_acc.append(data.qacc[0])
-                    # sim_z1_acc.append(data.qacc[2])
-                    # sim_theta_acc.append(data.qacc[4])
-                    # sim_alpha_1_acc.append(data.qacc[6])
-                    
-                    # eul_sim = np.zeros(3)
-                    # quat2eul(data.qpos[3:7], eul_sim)
-                    # x_sim = np.array([data.qpos[0], data.qpos[2], eul_sim[1], data.qpos[7], data.qvel[0], data.qvel[2], data.qvel[4], data.qvel[6]]).reshape((-1, 1))
-                    # f_u = np.array([[f1], [f2]])
-                    # calc_x1_acc, calc_z1_acc, calc_theta_acc, calc_alpha_1_acc = compute_accelerations(x_sim, f_u)
-                    # # calc_x1_acc, calc_z1_acc, calc_theta_acc, calc_alpha_1_acc = compute_accelerations(ekf_theta.x, f_u)
-                    
-                    # print (x_sim[6, 0] - x_sim[7, 0], data.qvel[6])
+                
 
-                    est_x1_acc.append(calc_x1_acc)
-                    est_z1_acc.append(calc_z1_acc)
-                    est_theta_acc.append(calc_theta_acc)
-                    est_alpha_1_acc.append(calc_alpha_1_acc)
-                    
-                    
-                    
-                    z_sim = compute_z(data, sim_state)
-                    sim_meas = np.append(sim_meas, z_sim.reshape((-1, 1)), axis = 1)
-                    # est_meas = np.append(est_meas, h_x(ekf_theta.x).reshape((-1, 1)), axis = 1)
-                    est_meas = np.append(est_meas, h_x(sim_state).reshape((-1, 1)), axis = 1)
-                    # est_meas = np.append(est_meas, h_est.reshape((-1, 1)), axis = 1)
-                    
-                    f1_story.append(f1)
-                    f2_story.append(f2)
-                    
-                    ground_force.append(data.sensor("feet_touch_sensor").data[0].copy())
-                    
-                    COM_pos = np.append(COM_pos, curr_pos.reshape((-1, 1)), axis = 1)
-                    COM_vel = np.append(COM_vel, curr_vel.reshape((-1, 1)), axis = 1)
-                    
-                    
-                    
-                    alpha_1_vel = x_sim[7, 0]
-                    # alpha_1_vel = ekf_theta.x[7, 0]
-                    
-                    alpha_1 = x_sim[3, 0]
-                    # alpha_1 = ekf_theta.x[3, 0]
-                    
-                    # print (calc_x1_acc, calc_z1_acc, calc_alpha_1_acc, alpha_1_vel, alpha_1)
-                    curr_acc = np.array([calc_x1_acc, 0, calc_z1_acc]).reshape((-1, 1)) + m_l1 / m_tot * l_l1 / 2 * (alpha_1_vel**2 * np.array([sin(alpha_1), 0, cos(alpha_1)]).reshape((-1, 1)) + calc_alpha_1_acc * np.array([-cos(alpha_1), 0, sin(alpha_1)]).reshape((-1, 1)))
-                    
-                    COM_acc = np.append(COM_acc, curr_acc.reshape((-1, 1)), axis = 1)
-                    
-                    goal_pos = np.append(goal_pos, des_pos.reshape((-1, 1)), axis = 1)
-                    # goal_vel = np.append(goal_vel, des_vel.reshape((-1, 1)), axis = 1)
-                    goal_vel = np.append(goal_vel, ref_vel.reshape((-1, 1)), axis = 1)
-                    
-                    goal_alpha_1.append(des_a1)
-                    # goal_w_1.append(x7.copy())
-                    # goal_w_1.append(des_w_1)
-                    goal_w_1.append(ref_w_1)
-                    
-                    goal_theta.append(des_prop_angle)
-                    # goal_w_b.append(0)
-                    goal_w_b.append(ref_w)
-                    
-                    
-                    # gps_meas = np.append(gps_meas, z_gps, axis = 1)
-                    gps_meas = np.append(gps_meas, compute_z_gps(data, x_sim).reshape((-1, 1)), axis = 1)
-                    # gps_sim = np.append(gps_sim, h_gps(x_sim), axis= 1)
-                    gps_sim = np.append(gps_sim, h_gps(ekf_theta.x), axis = 1)
-                    
-                    
-                    # gps_meas = np.append(gps_meas, data.sensor("gps").data.reshape((-1, 1)), axis = 1)
-                    # gps_sim = np.append(gps_sim, data.qpos[:3].copy().reshape((-1, 1)), axis= 1)
-                    
-                    
-                    # vel_meas = np.append(vel_meas, z_vel, axis = 1)
-                    vel_meas = np.append(vel_meas, compute_z_vel(data, x_sim).reshape((-1, 1)), axis = 1)
-                    # vel_sim = np.append(vel_sim, h_vel(x_sim), axis= 1)
-                    vel_sim = np.append(vel_sim, h_vel(ekf_theta.x), axis= 1)
-                    
-                    # damping_story.append(ekf_theta.x[8, 0].copy())
-                    
-                    phase_story.append(curr_phase)
-                    
-                    smoothing_story.append(smoothing_fact)
 
-                    phase_start_story.append(phase_start)
 
-                    f_cont_com = np.append(f_cont_com, com_cont_force.reshape((-1, 1)), axis = 1)
+                
+                
+                
+                # mujoco.mj_step(model, data)
+                
+                f_u = np.array([f1, f2]).reshape((-1, 1))
 
-                    M_cont_leg.append(des_M_1)
-                    M_cont_bar.append(des_M_bar)
+                F, B = compute_predict_matrices(ekf_theta.x, f_u)
+                
+                ekf_theta.F = F
 
-                    # cont_forces = np.zeros(6)
-                    mujoco.mju_zero(cont_forces)
+                ekf_theta.B = B
 
-                    curr_contact = 0
+                ekf_theta.Q = var_prop_dist * B @ B.T
 
-                    for i, cont in enumerate(data.contact):
-                        # print(dir(cont))
-                        # print (dir(cont.geom[0]))
-                        # if cont.geom[0] == data.geom("leg_1_stick").id or cont.geom[1] == data.geom("leg_1_stick").id:
-                        # if data.geom("leg_1_stick").id in cont.geom:
-                        if data.geom("floor").id in cont.geom:
-                            mujoco.mj_contactForce(model, data, i, cont_forces)
-                            # print (cont_forces)
-                            # print (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[0]),\
-                            #         mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, cont.geom[1]))
-                            # print (cont_forces[0] / cont_forces [1])
-                            curr_contact = 1
-                            
+                # if ground_model_comp and data.sensor("feet_touch_sensor").data[0] > ground_force_threshold:
+                #     B_ground = compute_ground_prediction_matrix(ekf_theta.x)
+
+                #     ekf_theta.Q+= var_ground_dist * B_ground @ B_ground.T 
+                # print ('ekf predict: ', f1, f2)
+                ekf_theta.predict(f_u)
+                
+                
+                # if (ekf_count == 0) and False:
+                if (ekf_count == 0) and do_update:
+                # if (ekf_count == 0) and (not and do_update: 
+                                                            
+                    
+                    # mujoco.mj_forward(model, data)
+                    # z = compute_z(data, ekf_theta.x)
+                    z = compute_z(data, sim_state)
+                    
+                    # h_est = h_x(ekf_theta.x, f1, f2)
+                    h_est = h_x(ekf_theta.x)
+                    
+                    ekf_theta.update(z = z, HJacobian = H_jac, Hx = h_x)
+                    IMU_update_instant.append(1)
+                else:
+                    IMU_update_instant.append(0)
+                # z_gps = 0
+                if gps_count == 0 and do_update:
+                    # print ("gps update")
+                    z_gps = compute_z_gps(data, ekf_theta.x)
+                    
+                    # h_est_gps = h_gps (ekf_theta.x)
+                    ekf_theta.update(z = z_gps, HJacobian = H_jac_gps, Hx = h_gps, R = R_gps)
+                    
+                    z_vel = compute_z_vel(data, ekf_theta.x)
+                    
+                    # ekf_theta.update(z = z_vel, HJacobian = H_jac_vel, Hx = h_vel, R = R_vel)
+                    
+                
+                ekf_count = (ekf_count + 1) % count_max
+                
+                gps_count+= 1
+                gps_count = gps_count % gps_sample_count
+
+                # print (curr_vel, ref_vel)
+                # print (ref_vel)
+
+                # f_u = np.array([f1, f2]).reshape((-1, 1))
+
+                # F, B = compute_predict_matrices(ekf_theta.x, f_u)
+                
+                # ekf_theta.F = F
+
+                # ekf_theta.B = B
+
+                # ekf_theta.Q = var_prop_dist * B @ B.T
+
+                # if ground_model_comp and data.sensor("feet_touch_sensor").data[0] > ground_force_threshold:
+                #     B_ground = compute_ground_prediction_matrix(ekf_theta.x)
+
+                #     ekf_theta.Q+= var_ground_dist * B_ground @ B_ground.T 
+                # # print ('ekf predict: ', f1, f2)
+                # ekf_theta.predict(f_u)
+                
+                # print (gps_count, gps_sample_count)
+                
+                
+                
+                
+                # meas_diff = np.append(meas_diff.reshape(3, -1), resid.reshape((3, 1))).reshape((3, -1))
+                # data.qvel[6] = 0
+                # if data.sensor("feet_touch_sensor").data > 0.01:
+                #     data.qvel[6] = 0
+                
+                # mujoco.mj_forward(model, data)
+                # mujoco.mj_step(model, data)
+                
+                C_b_sim = data.qpos[:3]
+                
+                # mujoco.mjv_initGeom(viewer.user_scn.geoms[0],\
+                #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
+                #     pos = C_b_sim, mat = np.eye(3).flatten(), rgba = blue_color)
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[0],\
+                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
+                    pos = data.site("IMU_1_loc").xpos, mat = np.eye(3).flatten(), rgba = blue_color)
+                
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[1],\
+                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
+                    pos = data.site("IMU_2_loc").xpos, mat = np.eye(3).flatten(), rgba = yellow_color)
+                
+                #goal position
+                # tr_rot_mat = np.zeros(9)
+                # tr_rot_quat = np.zeros(4)
+                # tr_rot_axis = np.array([1, 0, 0])
+                # tr_rot_angle = math.pi / 2
+                # mujoco.mju_axisAngle2Quat(tr_rot_quat, tr_rot_axis, tr_rot_angle)
+                # mujoco.mju_quat2Mat(tr_rot_mat, tr_rot_quat)
+                # print (tr_rot_mat)
+                
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[2],\
+                    type = mujoco.mjtGeom.mjGEOM_ELLIPSOID, size = np.array([0.04, 0.02, 0.02]),\
+                    pos = des_pos, mat = np.eye(3).flatten(), rgba = orange_color)
+                # mujoco.mjv_initGeom(viewer.user_scn.geoms[2],\
+                #     type = mujoco.mjtGeom.mjGEOM_TRIANGLE, size = np.array([0.02, 0.02, 0.02]),\
+                #     pos = des_pos, mat = tr_rot_mat, rgba = orange_color)
+                
+                
+                x1 = ekf_theta.x[0, 0]
+                z1 = ekf_theta.x[1, 0]
+                theta = ekf_theta.x[2, 0]
+                alpha_1 = ekf_theta.x[3, 0] 
+                
+                C_b_est = np.array([x1, 0, z1])
+                
+                p_prop_2 = C_b_est + l_b / 2 * np.array([cos(theta), 0, - sin(theta)])
+                
+                C_l1_est = C_b_est - l_l1 / 2 * np.array([sin(alpha_1), 0, cos(alpha_1)])
+                
+                C_t_est = m_b * C_b_est + m_l1 * C_l1_est
+                C_t_est/= m_tot
+                
+                curr_bar_eul = np.zeros(3)
+                quat2eul(data.qpos[3:7], curr_bar_eul)
+                # print(curr_bar_eul)
+                C_t_sim = np.array([data.qpos[0], 0, data.qpos[2]]) - m_l1 / m_tot * l_l1 / 2 * np.array([sin(data.qpos[7] + curr_bar_eul[1]), 0, cos(data.qpos[7] + curr_bar_eul[1])])
+                
+                
+                
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[3],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = C_b_est, mat = np.eye(3).flatten(), rgba = transp_green_color)
+                
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[4],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = p_prop_2, mat = np.eye(3).flatten(), rgba = cyan_color)
+                
+                # COM position
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[5],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_orange_color)
+                
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = C_t_est, mat = np.eye(3).flatten(), rgba = transp_blue_color)
+                
+                
+                
+                
+                # mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
+                #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
+                #     pos = C_t_sim, mat = np.eye(3).flatten(), rgba = green_color)
+            
+                
+                # bar_rot = np.array([0, data.qpos[0] + data.qpos[1], 0])
+                
+                # draw_vector_euler(viewer, 4, data.site("prop_1").xpos, red_color, k_f * data.actuator("propeller1").ctrl, bar_rot)
+                # draw_vector_euler(viewer, 5, data.site("prop_2").xpos, red_color, k_f * data.actuator("propeller2").ctrl, bar_rot)
+                # draw_vector(viewer, 2, data.site("IMU_loc").xpos, red_color, appl_force, k_f * mujoco.mju_norm(appl_force))
+                
+                #control force
+                # draw_vector(viewer, 6, data.site("IMU_loc").xpos, cyan_color, cont_force, 5 * k_f * mujoco.mju_norm(cont_force))
+                
+                
+                
+                
+                
+                #virtual applied force
+                # draw_vector(viewer, 8, data.site("IMU_1_loc").xpos, white_color, appl_force,  k_f * mujoco.mju_norm(appl_force))
+                # draw_vector(viewer, 7, data.site("IMU_1_loc").xpos, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
+                # draw_vector(viewer, 7, C_t_est, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
+                draw_vector(viewer, 7, C_b_sim, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
+                
+                draw_vector(viewer, 8, C_b_sim, blue_color, a1_cont_force,  30 * k_f * mujoco.mju_norm(a1_cont_force))
+                
+                draw_vector(viewer, 9, C_b_sim, green_color, com_cont_force,  30 * k_f * mujoco.mju_norm(com_cont_force))
+                # draw_vector(viewer, 9, C_b_sim, green_color, com_cont_force, 1)
+                
+                # draw_vector_euler(viewer, 9, C_b_sim, green_color, 0.2, bar_rot)
+                
+                
+                # print (COM_pos[:, -1])
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[10],\
+                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
+                    pos = data.subtree_com[0], mat = np.eye(3).flatten(), rgba = red_color)
+                
+                viewer.user_scn.ngeom =  11
+                
+                if curr_phase == 1 and not drawn_traj:
+                    t = data.time-phase_start
+                    while True:
+                        
+                        fin_traj_z = draw_trajectory(viewer, start_des_pos, jump_vx, jump_v_z_0, jump_acc, t, t_inc, green_color)
+                        t+= t_inc
+                        if fin_traj_z <= 0:
                             break
+                    traj_ngeoms = viewer.user_scn.ngeom
+                    drawn_traj = True
+                    print ("computed trajectory")
                     
-                    ground_force_vec = np.append(ground_force_vec, cont_forces[0:3].copy().reshape((-1, 1)), axis = 1)
-
-                    ground_contact.append(curr_contact)
-
-                    curr_foot_vel = np.zeros(6)
-                    foot_site_id = data.site("feet").id
-                    mujoco.mj_objectVelocity(model, data, mujoco.mjtObj.mjOBJ_SITE, foot_site_id, curr_foot_vel, 0)
-                    # print(curr_foot_vel)
-                    # sim_foot_vel = np.append(sim_foot_vel, curr_foot_vel[0:3].copy().reshape((-1, 1)), axis = 1)
-                    sim_foot_vel = np.append(sim_foot_vel, curr_foot_vel[3:].copy().reshape((-1, 1)), axis = 1)
-                    
-                    # P = ekf_theta.P.copy()
-                    # p_diag = np.array([P[0, 0], P[1, 1], P[2, 2]]).reshape((3, 1))
-                    
-                    # mujoco.mj_forward(model, data)
-                    
-                    # covar_values = np.append(covar_values, p_diag).reshape((3, -1))
-                    
-                    g = - model.opt.gravity[2]
-                    
-                    
-                    x = ekf_theta.x.copy()
-
-                    I_b, I_l1 = compute_inertias(x)
-                    #I = I_const.copy()
-                    
-                    # damp_coeff = x [8, 0]
-                    # x1_acc, z1_acc, theta_acc, alpha_1_acc = compute_accelerations(x, np.array([[f1], [f2]]))
-                    # d_a3 = (f1 + f2) / I_l1 * m_l1 / m_tot * l_l1 / 2 * cos(x[2, 0] - x[3, 0])
-                    # d_a4 = - d_a3
-                    # if data.sensor("feet_touch_sensor").data[0] > 0.01: #groundedn model
-                    #     d_a4+= m_l1 * g * l_l1 / 2 * cos(x[3, 0]) * (1 - m_l1 / (2 * m_tot)) / I_l1
-                    # d_a4+= data.sensor("feet_touch_sensor").data[0] * l_l1 * cos(x[3, 0]) * (1 - m_l1 / (2 * m_tot)) / I_l1
-                                    
-                    # d_a7 = - damp_coeff / I_l1
-                    # d_a8 = - d_a7
-                    
-                    # d_a7 = damp_coeff / I_l1
-                    # d_a8 = - d_a7
-                    
-                    F = np.eye(8) + dt * np.diag(np.array([1, 1, 1, 1]), 4)
-                    # F = np.eye(9) + dt * np.diag(np.array([1, 1, 1, 1, 0]), 4)
-
-                    # print (F)
-
-                    F [6, 6]-= dt * damp_coeff / I_b
-                    
-                    F [6, 7] = dt * damp_coeff / I_b
-                    
-                    # F [6, 8] = - dt / I_b * (x[6, 0] - x[7, 0])
-
-
-                    F [7, 6] = dt * damp_coeff / I_l1
-                    
-                    F [7, 7]-= dt * damp_coeff / I_l1
-                    
-                    # F [7, 8] = - dt / I_l1 * (x[7, 0] - x[6, 0])
-                    
-                    if data.sensor("feet_touch_sensor").data[0] < ground_force_threshold or (not ground_model_comp):
-                    
-                        F [4, 2] = dt * (f1 + f2) / m_tot * (cos(x[2, 0]) + m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * cos(x[3, 0]) * cos(x[2, 0] - x[3, 0]))
-                        
-                        # sin(x[3, 0]) * sin(x[2, 0] - x[3, 0]) + cos(x[3, 0]) * cos(x[2, 0] - x[3, 0]) = cos(x[2, 0] - 2*x[3, 0])
-                        F [4, 3] = dt / m_tot * (- m_l1 * l_l1 / 2 * x[7, 0]**2 * cos(x[3, 0]) - (f1 + f2) * m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * cos(x[2, 0] - 2*x[3, 0]) + m_l1 / I_l1 * damp_coeff * l_l1 / 2 * sin(x[3, 0]) * (x[7, 0] - x[6, 0]))
-                        
-                        F [4, 6] = dt * m_l1 / m_tot * l_l1 / 2 * damp_coeff / I_l1 * cos(x[3, 0])
-                        
-                        F [4, 7] = - dt * m_l1 / m_tot * l_l1 * (x[7, 0] * sin(x[3, 0]) + 1 / 2 * damp_coeff / I_l1 * cos(x[3, 0]))
-                        
-                        # F [4, 8] = - dt * m_l1 / m_tot * l_l1 / 2 * cos(x[3, 0]) * (x[7, 0] - x[6, 0]) / I_l1
-                        
-                        
-                        F [5, 2] = dt / m_tot * (f1 + f2) * (- sin(x[2, 0]) - m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * sin(x[3, 0]) * cos(x[2, 0] - x[3, 0]))
-                        #-cos(x[3, 0])*sin(x[2, 0]-x[3, 0])+sin(x[3, 0])*cos(x[2, 0]-x[3, 0])= 
-                        F [5, 3] = dt / m_tot * (m_l1 * l_l1 / 2 * x[7, 0] * sin(x[3, 0]) - (f1 + f2) * m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * sin(x[2, 0] - 2*x[3, 0]) + m_l1 / I_l1 * l_l1 / 2 * damp_coeff * (x[7, 0] - x[6, 0]) * cos(x[3, 0]))
-                        
-                        F [5, 6] = - dt * m_l1 / m_tot * damp_coeff / I_l1 * l_l1 / 2 * sin(x[3, 0])
-                        
-                        F [5, 7] = dt * m_l1 / m_tot * l_l1 * (x[7, 0] * cos(x[3, 0]) + sin(x[3, 0]) / 2 * damp_coeff / I_l1)
-                        
-                        # F [5, 8] = dt * m_l1 / m_tot * l_l1 / 2 * sin(x[3, 0]) * (x[7, 0] - x[6, 0]) / I_l1
-                        
-                        
-                        
-                        
-                        
-                        F [7, 2] = dt / I_l1 * (f1 + f2) * m_l1 / m_tot * l_l1 / 2 * cos(x[2, 0] - x[3, 0])
-                        
-                        F [7, 3] = - dt / I_l1 * (f1 + f2) * m_l1 / m_tot * l_l1 / 2 * cos(x[2, 0] - x[3, 0])
-                    
-                    
-                    
-                    else: #ground model
-                        
-                        F [4, 2] = l_l1**2 / I_l1 * (f1 + f2) * cos(x[2, 0] - x[3, 0]) * cos(x[3, 0])
-                        F [4, 2]*= dt
-
-                        F [4, 3] = l_l1**2 / I_l1 * (g * l_l1 * cos(2 * x[3, 0]) * (m_tot - m_l1 / 2) + (f1 + f2) * (- cos(x[2, 0] - x[3, 0]) * cos(x[3, 0]) - sin(x[2, 0] - x[3, 0]) * sin(x[3, 0]))) + damp_coeff * (x[7, 0] - x[6, 0]) * sin(x[3, 0]) * l_l1 / I_l1 - l_l1 * x[7, 0]**2 * cos(x[3, 0])
-                        F [4, 3]*= dt
-
-                        F [4, 6] = damp_coeff * l_l1 / I_l1
-                        F [4, 6]*= dt
-
-                        F [4, 7] = - 2 * l_l1 * x[7, 0] * sin(x[3, 0]) - damp_coeff * l_l1 / I_l1
-                        F [4, 7]*= dt
-
-
-                        F [5, 2] = - l_l1**2 / I_l1 * (f1 + f2) * cos(x[2, 0] - x[3, 0]) * sin(x[3, 0])
-                        F [5, 2]*= dt
-                        
-                        F [5, 3] = - l_l1 / I_l1 * (- damp_coeff * (x[7, 0] - x[6, 0]) * cos(x[3, 0]) + l_l1 * (g * (m_tot - m_l1 / 2) * sin(2 * x[3, 0]) + (f1 + f2) * (- cos(x[2, 0] - x[3, 0]) * sin(x[3, 0]) + sin(x[2, 0] - x[3, 0]) * cos(x[3, 0])))) + l_l1 * x[7, 0]**2 * sin(x[3, 0])
-                        F [5, 3]*= dt
-
-                        F [5, 6] = - l_l1 / I_l1 * damp_coeff
-                        F [5, 6]*= dt
-
-                        F [5, 7] = - 2 * l_l1 * x[7, 0] * cos(x[3, 0]) + l_l1 / I_l1 * damp_coeff
-                        F [5, 7]*= dt
-
-
-                        F [7, 2] = dt * (f1 + f2) * l_l1 / I_l1 * cos(x[2, 0] - x[3, 0])
-
-                        F [7, 3] = dt * l_l1 / I_l1 * (g * (m_tot - m_l1 / 2) * cos(x[3, 0]) - (f1 + f2) * cos(x[2, 0] - x[3, 0]))
-
-
-                    
-                    
-                    ekf_theta.F = F.copy()
-                    
-                    
-                    
-                    
-                    B = np.zeros((8, 2))
-
-                    B [6, 0] = dt / I_b * l_b / 2
-                        
-                    B [6, 1] = - B [6, 0]
-                    
-                    if data.sensor("feet_touch_sensor").data[0] < ground_force_threshold or (not ground_model_comp):
-                        B [4, 0] = dt / m_tot * (sin(x[2, 0]) + m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * cos(x[3, 0]) * sin(x[2, 0] - x[3, 0]))
-                        
-                        B [4, 1] = B [4, 0]
-                        
-                        
-                        B [5, 0] = dt / m_tot * (cos(x[2, 0]) + m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * sin(x[3, 0]) * sin(x[2, 0] - x[3, 0]))
-                        
-                        B [5, 1] = B [5, 0]
-                        
-                        
-                        B [7, 0] = dt / I_l1 * m_l1 / m_tot * l_l1 / 2 * sin(x[2, 0] - x[3, 0])
-                        
-                        B [7, 1] = B [7, 0]
-
-                    else:
-                        B [4, 0] = dt * l_l1**2 / I_l1 * sin(x[2, 0] - x[3, 0]) * cos(x[3, 0])
-
-                        B [4, 1] = B [4, 0]
-
-
-                        B [5, 0] = - dt * l_l1**2 / I_l1 * sin(x[2, 0] - x[3, 0]) * sin(x[3, 0])
-
-                        B [5, 1] = B [5, 0]
-
-
-                        B [7, 0] = dt * l_l1 / I_l1 * sin(x[2, 0] - x[3, 0])
-
-                        B [7, 1] = B [7, 0]
-
-
-
-                    
-                    ekf_theta.B = B.copy()
-                    
-                    # mujoco.mj_step(model, data)
-                    
-                    f_u = np.array([f1, f2]).reshape((-1, 1))
-                    
-                    
-                    # print ('ekf predict: ', f1, f2)
-                    ekf_theta.predict(f_u)
-                    
-                    
-                    # if (ekf_count == 0) and False:
-                    if (ekf_count == 0) and do_update:
-                    # if (ekf_count == 0) and (not and do_update: 
-                                                                
-                        
-                        # mujoco.mj_forward(model, data)
-                        # z = compute_z(data, ekf_theta.x)
-                        z = compute_z(data, sim_state)
-                        
-                        # h_est = h_x(ekf_theta.x, f1, f2)
-                        h_est = h_x(ekf_theta.x)
-                        
-                        ekf_theta.update(z = z, HJacobian = H_jac, Hx = h_x)
-                        IMU_update_instant.append(1)
-                    else:
-                        IMU_update_instant.append(0)
-                    # z_gps = 0
-                    if gps_count == 0 and do_update:
-                        # print ("gps update")
-                        z_gps = compute_z_gps(data, ekf_theta.x)
-                        
-                        # h_est_gps = h_gps (ekf_theta.x)
-                        ekf_theta.update(z = z_gps, HJacobian = H_jac_gps, Hx = h_gps, R = R_gps)
-                        
-                        z_vel = compute_z_vel(data, ekf_theta.x)
-                        
-                        # ekf_theta.update(z = z_vel, HJacobian = H_jac_vel, Hx = h_vel, R = R_vel)
-                        
-                    
-                    ekf_count = (ekf_count + 1) % count_max
-                    
-                    gps_count+= 1
-                    gps_count = gps_count % gps_sample_count
-                    
-                    # print (gps_count, gps_sample_count)
-                    
-                    
-                    
-                    
-                    # meas_diff = np.append(meas_diff.reshape(3, -1), resid.reshape((3, 1))).reshape((3, -1))
-                    # data.qvel[6] = 0
-                    # if data.sensor("feet_touch_sensor").data > 0.01:
-                    #     data.qvel[6] = 0
-                    
-                    # mujoco.mj_forward(model, data)
-                    # mujoco.mj_step(model, data)
-                    
-                    C_b_sim = data.qpos[:3]
-                    
-                    # mujoco.mjv_initGeom(viewer.user_scn.geoms[0],\
-                    #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
-                    #     pos = C_b_sim, mat = np.eye(3).flatten(), rgba = blue_color)
-                    mujoco.mjv_initGeom(viewer.user_scn.geoms[0],\
-                        type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
-                        pos = data.site("IMU_1_loc").xpos, mat = np.eye(3).flatten(), rgba = blue_color)
-                    
-                    mujoco.mjv_initGeom(viewer.user_scn.geoms[1],\
-                        type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
-                        pos = data.site("IMU_2_loc").xpos, mat = np.eye(3).flatten(), rgba = yellow_color)
-                    
-                    #goal position
-                    # tr_rot_mat = np.zeros(9)
-                    # tr_rot_quat = np.zeros(4)
-                    # tr_rot_axis = np.array([1, 0, 0])
-                    # tr_rot_angle = math.pi / 2
-                    # mujoco.mju_axisAngle2Quat(tr_rot_quat, tr_rot_axis, tr_rot_angle)
-                    # mujoco.mju_quat2Mat(tr_rot_mat, tr_rot_quat)
-                    # print (tr_rot_mat)
-                    
-                    mujoco.mjv_initGeom(viewer.user_scn.geoms[2],\
-                        type = mujoco.mjtGeom.mjGEOM_ELLIPSOID, size = np.array([0.04, 0.02, 0.02]),\
-                        pos = des_pos, mat = np.eye(3).flatten(), rgba = orange_color)
-                    # mujoco.mjv_initGeom(viewer.user_scn.geoms[2],\
-                    #     type = mujoco.mjtGeom.mjGEOM_TRIANGLE, size = np.array([0.02, 0.02, 0.02]),\
-                    #     pos = des_pos, mat = tr_rot_mat, rgba = orange_color)
-                    
-                    
-                    x1 = ekf_theta.x[0, 0]
-                    z1 = ekf_theta.x[1, 0]
-                    theta = ekf_theta.x[2, 0]
-                    alpha_1 = ekf_theta.x[3, 0] 
-                    
-                    C_b_est = np.array([x1, 0, z1])
-                    
-                    p_prop_2 = C_b_est + l_b / 2 * np.array([cos(theta), 0, - sin(theta)])
-                    
-                    C_l1_est = C_b_est - l_l1 / 2 * np.array([sin(alpha_1), 0, cos(alpha_1)])
-                    
-                    C_t_est = m_b * C_b_est + m_l1 * C_l1_est
-                    C_t_est/= m_tot
-                    
-                    curr_bar_eul = np.zeros(3)
-                    quat2eul(data.qpos[3:7], curr_bar_eul)
-                    # print(curr_bar_eul)
-                    C_t_sim = np.array([data.qpos[0], 0, data.qpos[2]]) - m_l1 / m_tot * l_l1 / 2 * np.array([sin(data.qpos[7] + curr_bar_eul[1]), 0, cos(data.qpos[7] + curr_bar_eul[1])])
-                    
-                    
-                    
-                    mujoco.mjv_initGeom(viewer.user_scn.geoms[3],\
-                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                        pos = C_b_est, mat = np.eye(3).flatten(), rgba = transp_green_color)
-                    
-                    mujoco.mjv_initGeom(viewer.user_scn.geoms[4],\
-                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                        pos = p_prop_2, mat = np.eye(3).flatten(), rgba = cyan_color)
-                    
-                    # COM position
-                    mujoco.mjv_initGeom(viewer.user_scn.geoms[5],\
-                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                        pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_orange_color)
-                    
-                    mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
-                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                        pos = C_t_est, mat = np.eye(3).flatten(), rgba = transp_blue_color)
-                    
-                    
-                    
-                    
-                    # mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
-                    #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
-                    #     pos = C_t_sim, mat = np.eye(3).flatten(), rgba = green_color)
+                if curr_phase == 1:
+                    viewer.user_scn.ngeom = traj_ngeoms
                 
-                    
-                    # bar_rot = np.array([0, data.qpos[0] + data.qpos[1], 0])
-                    
-                    # draw_vector_euler(viewer, 4, data.site("prop_1").xpos, red_color, k_f * data.actuator("propeller1").ctrl, bar_rot)
-                    # draw_vector_euler(viewer, 5, data.site("prop_2").xpos, red_color, k_f * data.actuator("propeller2").ctrl, bar_rot)
-                    # draw_vector(viewer, 2, data.site("IMU_loc").xpos, red_color, appl_force, k_f * mujoco.mju_norm(appl_force))
-                    
-                    #control force
-                    # draw_vector(viewer, 6, data.site("IMU_loc").xpos, cyan_color, cont_force, 5 * k_f * mujoco.mju_norm(cont_force))
-                    
-                    
-                    
-                    
-                    
-                    #virtual applied force
-                    # draw_vector(viewer, 8, data.site("IMU_1_loc").xpos, white_color, appl_force,  k_f * mujoco.mju_norm(appl_force))
-                    # draw_vector(viewer, 7, data.site("IMU_1_loc").xpos, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
-                    # draw_vector(viewer, 7, C_t_est, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
-                    draw_vector(viewer, 7, C_b_sim, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
-                    
-                    draw_vector(viewer, 8, C_b_sim, blue_color, a1_cont_force,  30 * k_f * mujoco.mju_norm(a1_cont_force))
-                    
-                    draw_vector(viewer, 9, C_b_sim, green_color, com_cont_force,  30 * k_f * mujoco.mju_norm(com_cont_force))
-                    # draw_vector(viewer, 9, C_b_sim, green_color, com_cont_force, 1)
-                    
-                    # draw_vector_euler(viewer, 9, C_b_sim, green_color, 0.2, bar_rot)
-                    
-                    
-                    # print (COM_pos[:, -1])
-                    mujoco.mjv_initGeom(viewer.user_scn.geoms[10],\
-                        type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
-                        pos = data.subtree_com[0], mat = np.eye(3).flatten(), rgba = red_color)
-                    
-                    viewer.user_scn.ngeom =  11
-                    
-                    if curr_phase == 1 and not drawn_traj:
-                        t = data.time-phase_start
-                        while True:
-                            
-                            fin_traj_z = draw_trajectory(viewer, start_des_pos, jump_vx, jump_v_z_0, jump_acc, t, t_inc, green_color)
-                            t+= t_inc
-                            if fin_traj_z <= 0:
-                                break
-                        traj_ngeoms = viewer.user_scn.ngeom
-                        drawn_traj = True
-                        print ("computed trajectory")
-                        
-                    if curr_phase == 1:
-                        viewer.user_scn.ngeom = traj_ngeoms
-                    
-                    mujoco.mj_step(model, data)
-                    # try:
-                    #     mujoco.mj_step(model, data)
-                    # except Exception as e:
-                    #     print (e)
-                    
-                    # if data.sensor("feet_touch_sensor").data > 0.01:
-                    #     break
-                    #mujoco.mjv_updateScene(model, data, viewer.opt, viewer.perturb, viewer.cam, mujoco.mjtCatBit.mjCAT_ALL, viewer.user_scn)
-                        
+                mujoco.mj_step(model, data)
+                # try:
+                #     mujoco.mj_step(model, data)
+                # except Exception as e:
+                #     print (e)
                 
-                #mujoco.mj_kinematics(model, data)    
-                viewer.sync() 
-                
-                
-                
-            if (not fast_run):
-                time_to_step = model.opt.timestep - (time.time() - step_start)
-                # print(time_to_step)
-                if (time_to_step > 0):
-                    time.sleep(time_to_step)
-except Exception as e:
-    print (e)
+                # if data.sensor("feet_touch_sensor").data > 0.01:
+                #     break
+                #mujoco.mjv_updateScene(model, data, viewer.opt, viewer.perturb, viewer.cam, mujoco.mjtCatBit.mjCAT_ALL, viewer.user_scn)
+                    
+            
+            #mujoco.mj_kinematics(model, data)    
+            viewer.sync() 
+            
+            
+            
+        if (not fast_run):
+            time_to_step = model.opt.timestep - (time.time() - step_start)
+            # print(time_to_step)
+            if (time_to_step > 0):
+                time.sleep(time_to_step)
+# except Exception as e:
+#     print (e)
 
 #print (angle_err)
 #  print (sim_meas)
