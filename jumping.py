@@ -158,7 +158,7 @@ def compute_predict_matrices(x, u):
         
         F [5, 2] = dt / m_tot * (f1 + f2) * (- sin(x[2, 0]) - m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * sin(x[3, 0]) * cos(x[2, 0] - x[3, 0]))
         #-cos(x[3, 0])*sin(x[2, 0]-x[3, 0])+sin(x[3, 0])*cos(x[2, 0]-x[3, 0])= 
-        F [5, 3] = dt / m_tot * (m_l1 * l_l1 / 2 * x[7, 0] * sin(x[3, 0]) - (f1 + f2) * m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * sin(x[2, 0] - 2*x[3, 0]) + m_l1 / I_l1 * l_l1 / 2 * damp_coeff * (x[7, 0] - x[6, 0]) * cos(x[3, 0]))
+        F [5, 3] = dt / m_tot * (m_l1 * l_l1 / 2 * x[7, 0]**2 * sin(x[3, 0]) - (f1 + f2) * m_l1**2 / (I_l1 * m_tot) * l_l1**2 / 4 * sin(x[2, 0] - 2*x[3, 0]) + m_l1 / I_l1 * l_l1 / 2 * damp_coeff * (x[7, 0] - x[6, 0]) * cos(x[3, 0]))
         
         F [5, 6] = - dt * m_l1 / m_tot * damp_coeff / I_l1 * l_l1 / 2 * sin(x[3, 0])
         
@@ -852,13 +852,13 @@ ekf_theta.P = np.diag(init_noise)
 # control params
 I_b, I_l1 = compute_inertias(ekf_theta.x)
 
-freq_COM = 2
+freq_COM = 3
 csi_COM = 1
 
-freq_theta = 1000
-csi_theta = 4
+freq_theta = 30
+csi_theta = 1
 
-freq_alpha_1 = 4
+freq_alpha_1 = 1
 csi_alpha_1 = 1
 
 # freq_alpha_1 = 4
@@ -876,12 +876,12 @@ csi_alpha_1 = 1
 
 gamma_v = freq_COM / (2 * csi_COM)
 
-gamma_acc = 2 * csi_COM * freq_COM * m_tot
+gamma_acc = 2 * csi_COM * freq_COM
 
 gamma_w_b = freq_theta / (2 * csi_theta)
 # gamma_w_b = -freq_theta / (2 * csi_theta)
 
-gamma_acc_b = 2 * csi_theta * freq_theta * I_b
+gamma_acc_b = 2 * csi_theta * freq_theta
 # gamma_acc_b = 2 * csi_theta * freq_theta * m_tot
 
 # print (gamma_acc_b)
@@ -891,7 +891,7 @@ gamma_acc_b = 2 * csi_theta * freq_theta * I_b
 
 # gamma_acc_1 = 2 * csi_alpha_1 * freq_alpha_1 * m_tot
 
-gamma_acc_1 = freq_alpha_1 / I_l1
+gamma_acc_1 = freq_alpha_1
 
 
 # gamma_v = 1
@@ -1021,6 +1021,7 @@ start_des_pos = 1/m_tot * (m_b*bar_des_pos.reshape((-1, 1))+m_l1*leg_des_pos.res
 jump_height = 0.8
 
 t_zmax = 4
+# t_zmax = 2
 
 x_land = 2
 
@@ -1044,7 +1045,7 @@ jump_vx = x_land / (2*t_zmax)
 # jump_v_z_0 = 0.8
 # jump_vx = 0.1
 
-print (jump_acc, jump_v_z_0, jump_vx)
+# print (jump_acc, jump_v_z_0, jump_vx)
 
 drawn_traj = False
 
@@ -1927,8 +1928,8 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_l
     # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_SITE
     # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_GEOM
     
-    viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = True
-    viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTSPLIT] = True
+    # viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = True
+    # viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTSPLIT] = True
     # viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_] = True
     
     # print(viewer.opt.label)
