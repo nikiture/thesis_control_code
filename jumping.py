@@ -46,7 +46,7 @@ class Modif_EKF(ExtendedKalmanFilter):
         
         # self.x += dxb
         
-        if data.sensor("feet_touch_sensor").data[0]<0.01 or (not ground_model_comp):
+        if data.sensor("feet_touch_sensor").data[0]<0.01 or (not ground_model_comp) or (not special_ground_comp):
             dx5, dx6, dx7, dx8 = compute_accelerations(self.x, u)
             
             # print (dx3, dx4)
@@ -71,6 +71,7 @@ class Modif_EKF(ExtendedKalmanFilter):
             
             # self.x += dx
         else:
+            # print ("computiong special ground update")
             _, _, dx7, dx8 = compute_accelerations(self.x, u)
 
             dxa = dt * np.array([0, 0, 0, 0, 0, 0, dx7, dx8]).reshape((-1, 1))
@@ -306,6 +307,8 @@ appl_noise = True
 automated_jump = False
 
 fast_run = False
+
+special_ground_comp = True
 
 ground_force_threshold = 0.001
 
@@ -1234,11 +1237,15 @@ def control_callback (model, data):
         
     
     if curr_phase == 0:
-        des_pos = start_des_pos
+        # des_pos = start_des_pos
         
         des_vel = np.zeros((3, 1))
         
         des_acc = np.zeros((3, 1))
+        foot_pos = np.array([x1, 0, x2]).reshape((-1, 1)) - l_l1 * np.array([sin(x4), 0, cos(x4)]).reshape((-1, 1))
+        bar_des_pos = foot_pos + np.array([0, 0, l_l1]).reshape((-1, 1))
+        leg_des_pos = foot_pos + l_l1 / 2 * np.array([0, 0, 1]).reshape((-1, 1))
+        des_pos = 1/m_tot * (m_b*bar_des_pos+m_l1*leg_des_pos)
     
     delta_t = data.time - phase_start
     if curr_phase == 1 and x2 < 1.5 * l_l1 and delta_t > - jump_v_z_0 / jump_acc:
