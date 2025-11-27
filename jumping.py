@@ -182,13 +182,13 @@ def compute_predict_matrices(x, u):
         F [4, 2] = l_l1**2 / I_l1 * (f1 + f2) * cos(x[2, 0] - x[3, 0]) * cos(x[3, 0])
         F [4, 2]*= dt
 
-        F [4, 3] = l_l1**2 / I_l1 * (g * l_l1 * cos(2 * x[3, 0]) * (m_tot - m_l1 / 2) + (f1 + f2) * (- cos(x[2, 0] - x[3, 0]) * cos(x[3, 0]) - sin(x[2, 0] - x[3, 0]) * sin(x[3, 0]))) + damp_coeff * (x[7, 0] - x[6, 0]) * sin(x[3, 0]) * l_l1 / I_l1 - l_l1 * x[7, 0]**2 * cos(x[3, 0])
+        F [4, 3] = l_l1**2 / I_l1 * (g * cos(2 * x[3, 0]) * (m_tot - m_l1 / 2) + (f1 + f2) * (- cos(x[2, 0] - x[3, 0]) * cos(x[3, 0]) - sin(x[2, 0] - x[3, 0]) * sin(x[3, 0]))) + damp_coeff * (x[7, 0] - x[6, 0]) * sin(x[3, 0]) * l_l1 / I_l1 - l_l1 * x[7, 0]**2 * cos(x[3, 0])
         F [4, 3]*= dt
 
-        F [4, 6] = damp_coeff * l_l1 / I_l1
+        F [4, 6] = damp_coeff * l_l1 / I_l1 * cos(x[3, 0])
         F [4, 6]*= dt
 
-        F [4, 7] = - 2 * l_l1 * x[7, 0] * sin(x[3, 0]) - damp_coeff * l_l1 / I_l1
+        F [4, 7] = - 2 * l_l1 * x[7, 0] * sin(x[3, 0]) - damp_coeff * l_l1 / I_l1 * cos(x[3, 0])
         F [4, 7]*= dt
 
 
@@ -198,10 +198,10 @@ def compute_predict_matrices(x, u):
         F [5, 3] = - l_l1 / I_l1 * (- damp_coeff * (x[7, 0] - x[6, 0]) * cos(x[3, 0]) + l_l1 * (g * (m_tot - m_l1 / 2) * sin(2 * x[3, 0]) + (f1 + f2) * (- cos(x[2, 0] - x[3, 0]) * sin(x[3, 0]) + sin(x[2, 0] - x[3, 0]) * cos(x[3, 0])))) + l_l1 * x[7, 0]**2 * sin(x[3, 0])
         F [5, 3]*= dt
 
-        F [5, 6] = - l_l1 / I_l1 * damp_coeff
+        F [5, 6] = - l_l1 / I_l1 * damp_coeff * sin(x[3, 0])
         F [5, 6]*= dt
 
-        F [5, 7] = - 2 * l_l1 * x[7, 0] * cos(x[3, 0]) + l_l1 / I_l1 * damp_coeff
+        F [5, 7] = - 2 * l_l1 * x[7, 0] * cos(x[3, 0]) + l_l1 / I_l1 * damp_coeff * sin(x[3, 0])
         F [5, 7]*= dt
 
 
@@ -309,6 +309,8 @@ automated_jump = False
 fast_run = False
 
 special_ground_comp = True
+
+foot_pos_update = True
 
 ground_force_threshold = 0.001
 
@@ -1237,15 +1239,18 @@ def control_callback (model, data):
         
     
     if curr_phase == 0:
-        # des_pos = start_des_pos
+        if foot_pos_update:
+            foot_pos = np.array([x1, 0, x2]).reshape((-1, 1)) - l_l1 * np.array([sin(x4), 0, cos(x4)]).reshape((-1, 1))
+            bar_des_pos = foot_pos + np.array([0, 0, l_l1]).reshape((-1, 1))
+            leg_des_pos = foot_pos + l_l1 / 2 * np.array([0, 0, 1]).reshape((-1, 1))
+            des_pos = 1/m_tot * (m_b*bar_des_pos+m_l1*leg_des_pos)
+        else:
+            des_pos = start_des_pos
         
         des_vel = np.zeros((3, 1))
         
         des_acc = np.zeros((3, 1))
-        foot_pos = np.array([x1, 0, x2]).reshape((-1, 1)) - l_l1 * np.array([sin(x4), 0, cos(x4)]).reshape((-1, 1))
-        bar_des_pos = foot_pos + np.array([0, 0, l_l1]).reshape((-1, 1))
-        leg_des_pos = foot_pos + l_l1 / 2 * np.array([0, 0, 1]).reshape((-1, 1))
-        des_pos = 1/m_tot * (m_b*bar_des_pos+m_l1*leg_des_pos)
+        
     
     delta_t = data.time - phase_start
     if curr_phase == 1 and x2 < 1.5 * l_l1 and delta_t > - jump_v_z_0 / jump_acc:
