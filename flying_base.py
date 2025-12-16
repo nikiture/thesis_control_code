@@ -79,9 +79,13 @@ for k in range(0, 3):
 
 # print (data.qpos)
 # data.qpos[7] = 0.3 * math.pi/2
-data.qpos[7] = 0.05
+# data.qpos[7] = 0.05
+data.qpos[7] = 0
 
 # data.qvel[6] = 5
+
+# data.qvel[0] = 0.5
+# data.qvel[0] = 4
 
 # start_eul = np.array([0, 0.01, 0])
 start_eul = np.array([0, 0, 0])
@@ -999,10 +1003,13 @@ def compute_z (data, x):
     R2 = np.array([[math.cos(q_est_2), 0, math.sin(q_est_2)], [0, 1, 0], [-math.sin(q_est_2), 0, math.cos(q_est_2)]])
     
     
-    mujoco.mju_mulMatVec (acc_data_1, R1, acc_data_1.copy())
+    # mujoco.mju_mulMatVec (acc_data_1, R1, acc_data_1.copy())
     
-    mujoco.mju_mulMatVec (acc_data_2, R2, acc_data_2.copy())
+    # mujoco.mju_mulMatVec (acc_data_2, R2, acc_data_2.copy())
     
+    # mujoco.mju_mulMatTVec (acc_data_1, R1, acc_data_1.copy())
+    
+    # mujoco.mju_mulMatTVec (acc_data_2, R2, acc_data_2.copy())
     
     
     
@@ -1143,22 +1150,22 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                 
                 
                 
-                # mujoco.mjv_initGeom(viewer.user_scn.geoms[3],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = C_b_est, mat = np.eye(3).flatten(), rgba = transp_green_color)
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[3],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = C_b_est, mat = np.eye(3).flatten(), rgba = transp_green_color)
                 
-                # mujoco.mjv_initGeom(viewer.user_scn.geoms[4],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = p_prop_2, mat = np.eye(3).flatten(), rgba = cyan_color)
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[4],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = p_prop_2, mat = np.eye(3).flatten(), rgba = cyan_color)
                 
-                #COM position
-                # mujoco.mjv_initGeom(viewer.user_scn.geoms[5],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_orange_color)
+                # COM position
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[5],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_orange_color)
                 
-                # mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = C_t_est, mat = np.eye(3).flatten(), rgba = transp_blue_color)
+                mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
+                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    pos = C_t_est, mat = np.eye(3).flatten(), rgba = transp_blue_color)
                 
                 
                 
@@ -1305,6 +1312,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as vie
                     ekf_theta.update(z = z, HJacobian = H_jac, Hx = h_x)
                 
                 
+                print (data.qvel[0])
                 sim_time.append (data.time)
                 
                 sim_x1.append(data.qpos[0])

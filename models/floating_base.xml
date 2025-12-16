@@ -6,6 +6,10 @@
     
     </option>
     <!-- <option timestep = ".001"/> -->
+
+    <!-- <option density = "1.2" viscosity = "0.002"/> -->
+    <option density = "1.2" viscosity = "0.2"/>
+
     <asset>
         <texture name="grid" type="2d" builtin="checker" rgb1=".1 .2 .3"
             rgb2=".2 .3 .4" width="300" height="300" mark="none"/>
@@ -27,6 +31,7 @@
             <site name = "prop_2" pos = ".1 0 0"/>
 
             <body name = "leg_1"  gravcomp = "0">
+                <!-- <joint name = "leg_1_joint" type = "hinge" axis = "0 1 0" pos = "0 0 0" damping = ".2"/> -->
                 <joint name = "leg_1_joint" type = "hinge" axis = "0 1 0" pos = "0 0 0"/>
                 <geom name = "leg_1_stick" type = "cylinder" fromto = "0 0 0 0 0 -.5" size = ".002" mass = "1"/>
                 <!-- <geom name = "leg_1_stick" type = "box" fromto = "0 0 0 0 0 -.5" size = ".002 .002" mass = "1"/> -->
