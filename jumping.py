@@ -306,7 +306,7 @@ foot_pos_update = True
 
 update_after_predict = True
 
-sim_data_cont = True
+sim_data_cont = False
 
 ground_alpha_cont = False
 
@@ -891,8 +891,11 @@ ekf_theta.R = R.copy()
 # var_dist = 0
 # var_dist = 0.1
 
-var_prop_dist = 0.1
-var_prop_dist_mat = np.diag([var_prop_dist, var_prop_dist])
+# var_prop_dist = 0.1
+# var_prop_dist_mat = np.diag([var_prop_dist, var_prop_dist])
+
+var_prop_dist = np.array([0.01, 0.01, 0.1, 0.1, 0.01, 0.01, 0.01, 0.01])
+var_prop_dist_mat = np.diag(var_prop_dist)
 
 var_ground_dist = 0.1
 
@@ -2497,7 +2500,8 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_l
                 ekf_theta.B = B
 
                 # ekf_theta.Q = var_prop_dist * B @ B.T
-                ekf_theta.Q = B @ var_prop_dist_mat @ B.T
+                # ekf_theta.Q = B @ var_prop_dist_mat @ B.T
+                ekf_theta.Q = var_prop_dist_mat
 
                 # if ground_model_comp and data.sensor("feet_touch_sensor").data[0] > ground_force_threshold:
                 #     B_ground = compute_ground_prediction_matrix(ekf_theta.x)
