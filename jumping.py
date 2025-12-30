@@ -13,8 +13,15 @@ import math
 from math import sin, cos
 import random
 from filterpy.kalman import ExtendedKalmanFilter
-from filterpy.common import Q_discrete_white_noise
+# from filterpy.common import Q_discrete_white_noise
 import csv
+
+#configuration
+import json
+# import toml
+# import yaml
+# import pyyaml
+
 # from inspect import currentframe, getframeinfo
 #import os
 
@@ -269,6 +276,26 @@ def compute_ground_prediction_matrix(x):
 
     return B_g
 
+
+experiment_scenario = 12
+
+config_file = "jump_config"
+if experiment_scenario == 12:
+    with open("config/"+config_file + "_1.json")as conf_file:
+        config = json.load(conf_file)
+else:
+    with open("config/"+config_file + "_"+str(experiment_scenario)+".json")as conf_file:
+        config = json.load(conf_file)
+
+# print (config)
+# print (config['variances'])
+variances = config['variances']
+
+cont_gains = config['control_gains']
+
+init_dist = variances['start']
+
+
 # print ("creating model and data")
 model = mujoco.MjModel.from_xml_path ("models/jumping.xml")
 #model.opt.timestep = 0.002
@@ -298,6 +325,8 @@ appl_noise = True
 
 automated_jump = True
 
+jump_time = 10
+
 fast_run = True
 
 special_ground_comp = True
@@ -318,7 +347,13 @@ skip_land_update = True
 
 landed = False
 
-land_impulse = True
+land_impulse = False
+
+w_bar_sat = True
+
+render = False
+
+append_delimiter = False
 
 #increased IMU noise?
 
@@ -337,10 +372,14 @@ r_caps = model.geom("leg_1_stick").size[0]
 damp_coeff = model.joint("leg_1_joint").damping[0]
 
 # print (damp_coeff)
-start_pos = np.array([-0.2, 0, 0.45]).reshape((-1, 1))
+# start_pos = np.array([-0.2, 0, 0.45]).reshape((-1, 1))
 # start_pos = np.array([0, 0, 0.7]).reshape((-1, 1))
 # start_pos = np.array([0, 0, 0.5]).reshape((-1, 1))
+start_pos = np.array([-1, 0, r_caps]).reshape((-1, 1))
 
+
+if experiment_scenario == 12:
+    start_pos = np.array([-0.5, 0, 0.5 + r_caps]).reshape((-1, 1))
 # start_alpha_1 = 0.05
 start_alpha_1 = 0
 
@@ -354,7 +393,8 @@ if start_pos[2, 0] < l_l1 + r_caps:
     # start_alpha_1 = math.acos(start_pos[2, 0] / (l_l1))+0.006
     # start_alpha_1 = math.acos(start_pos[2, 0] / (l_l1))
     # start_alpha_1 = math.acos(start_pos[2, 0] / (l_l1))+0.009
-    start_alpha_1 = math.acos((start_pos[2, 0]-r_caps) / l_l1)
+    start_alpha_1 = -math.acos((start_pos[2, 0]-r_caps) / l_l1)
+    # start_ùalpha_1 = math.acos((start_pos[2, 0]-r_caps) / l_l1)
 
 data.qpos[7] = start_alpha_1
 
@@ -428,7 +468,7 @@ def compute_inertias(x):
     # I_l1 = model.body("leg_1").inertia[1] + m_l1 * l_l1**2 / 4 * m_b / m_tot
 
 
-    if data.sensor("feet_touch_sensor").data[0] < ground_force_threshold or (not ground_model_comp):
+    if (not grounded) or (not ground_model_comp):
         I_l1 = model.body("leg_1").inertia[1] + m_l1 * l_l1**2 / 4 * m_b / m_tot
     else:
         I_l1 = model.body("leg_1").inertia[1] + l_l1**2 * (m_l1 / 4 + m_b)
@@ -625,7 +665,7 @@ green_color = np.array([0, 1, 0, 1])
 yellow_color = np.array([1, 0, 1, 1])
 
 exit = False
-pause = True
+pause = False
 step = False
 
 sim_time = []
@@ -839,8 +879,10 @@ ekf_theta.x [7, 0] = data.qvel[6].copy() + data.qvel[4].copy()
 
 
 
-init_noise = np.array([0.1, 0.1, 0.07, 0.07, 0.01, 0.01, 0.02, 0.02])
+# init_noise = np.array([0.1, 0.1, 0.07, 0.07, 0.01, 0.01, 0.02, 0.02])
 # init_noise = np.array([0.05, 0.05, 0.02, 0.02, 0.01, 0.01, 0.02, 0.02, 0.01])
+init_noise = np.array(init_dist)
+
 
 if rand_init:
     print ("applying init disturbances")
@@ -851,15 +893,20 @@ if rand_init:
     # for i in noise_to_appl:
     #     ekf_theta.x[i, 0]+= random.gauss(0, init_noise[i])
 
+ekf_theta.P = np.diag(init_noise)
 
-# ekf_theta.x[4, 0]-= 0.5
 
+# var_gyro_1 = model.sensor("IMU_1_gyro").noise[0]
+# var_acc_1 = model.sensor("IMU_1_acc").noise[0]
 
-var_gyro_1 = model.sensor("IMU_1_gyro").noise[0]
-var_acc_1 = model.sensor("IMU_1_acc").noise[0]
+# var_gyro_2 = model.sensor("IMU_2_gyro").noise[0]
+# var_acc_2 = model.sensor("IMU_2_acc").noise[0]
 
-var_gyro_2 = model.sensor("IMU_2_gyro").noise[0]
-var_acc_2 = model.sensor("IMU_2_acc").noise[0]
+var_gyro_1 = variances['gyro'][0]
+var_gyro_2 = variances['gyro'][1]
+
+var_acc_1 = variances['acc'][0]
+var_acc_2 = variances['acc'][1]
 
 
 R = np.zeros((6, 6))
@@ -871,15 +918,17 @@ R [3, 3] = var_gyro_2
 R [4, 4] = var_acc_2
 R [5, 5] = var_acc_2
 
-var_gps = model.sensor("gps").noise[0]
+# var_gps = model.sensor("gps").noise[0]
+var_gps = variances['GPS'][0]
+
 R_gps = np.zeros((2, 2))
 R_gps [0, 0] = var_gps
 R_gps [1, 1] = var_gps
 # print (R_gps)
 
-R_vel = np.zeros((2, 2))
-R_vel [0, 0] = model.sensor("gps_vel").noise[0]
-R_vel [1, 1] = model.sensor("gps_vel").noise[0]
+# R_vel = np.zeros((2, 2))
+# R_vel [0, 0] = model.sensor("gps_vel").noise[0]
+# R_vel [1, 1] = model.sensor("gps_vel").noise[0]
 
 # R *= 0.8
 # R*= 0.001
@@ -894,13 +943,14 @@ ekf_theta.R = R.copy()
 # var_prop_dist = 0.1
 # var_prop_dist_mat = np.diag([var_prop_dist, var_prop_dist])
 
-var_prop_dist = np.array([0.01, 0.01, 0.1, 0.1, 0.01, 0.01, 0.01, 0.01])
+# var_prop_dist = np.array([0.01, 0.01, 0.1, 0.1, 0.01, 0.01, 0.01, 0.01])
+var_prop_dist = variances['proc']
 var_prop_dist_mat = np.diag(var_prop_dist)
 
 var_ground_dist = 0.1
 
 
-Q = np.zeros((8, 8))
+# Q = np.zeros((8, 8))
 #computations for Q (if needed)
 
 #ekf_theta.Q = Q
@@ -911,14 +961,22 @@ Q = np.zeros((8, 8))
 # ekf_theta.P *= 10
 # ekf_theta.P *= 0.3
 
-ekf_theta.P = np.diag(init_noise)
+
 
 # print (ekf_theta.P)
 
 
 
 # control params
+grounded = True
 I_b, I_l1 = compute_inertias(ekf_theta.x)
+
+print (I_l1)
+
+grounded = False
+I_b, I_l1 = compute_inertias(ekf_theta.x)
+
+print (I_l1)
 
 # freq_COM = 3
 # csi_COM = 1
@@ -977,14 +1035,23 @@ I_b, I_l1 = compute_inertias(ekf_theta.x)
 # gamma_acc_1 = 8
 # # gamma_acc_1 = 0
 
-freq_COM_v = 1.5
-freq_COM_acc = 10
+# freq_COM_v = 1.5
+# freq_COM_acc = 10
 
-freq_theta_w = 10
-freq_theta_acc = 100
+# freq_theta_w = 10
+# freq_theta_acc = 100
 
-freq_alpha_1_w = 1.5
-freq_alpha_1_acc = 15
+# freq_alpha_1_w = 1.5
+# freq_alpha_1_acc = 15
+
+freq_COM_v = cont_gains['COM']['v']
+freq_COM_acc = cont_gains['COM']['a']
+
+freq_theta_w = cont_gains['Theta']['v']
+freq_theta_acc = cont_gains['Theta']['a']
+
+freq_alpha_1_w = cont_gains['Alpha']['v']
+freq_alpha_1_acc = cont_gains['Alpha']['a']
 
 gamma_v = freq_COM_v
 gamma_acc = freq_COM_acc
@@ -995,9 +1062,10 @@ gamma_acc_b = freq_theta_acc
 gamma_acc_1 = freq_alpha_1_w
 gamma_w_1 = 0
 
-max_vel = 0.4
+max_vel_flight = config['max_velocities']['COM']["flight"]
+max_vel_ground = config['max_velocities']['COM']["ground"]
 
-max_w = 0.5
+max_w = config['max_velocities']['Theta']
 # max_w = 1.5
 # max_w = 100
 
@@ -1054,37 +1122,6 @@ prev_phase = 0
 phase_start = 0
 in_air = False
 
-def draw_vector(scene, idx, arrow_pos, arrow_color, arrow_dir, arrow_norm):
-    
-    mujoco.mju_copy(loc_force, arrow_dir)
-    mujoco.mju_normalize (loc_force)
-    mujoco.mju_quatZ2Vec(arrow_quat, loc_force)
-    mujoco.mju_quat2Mat(arrow_mat, arrow_quat)
-    mujoco.mju_copy(arrow_dim, arrow_shape)
-    arrow_dim [2] = arrow_shape [2] * arrow_norm
-    mujoco.mjv_initGeom(scene.geoms[idx],\
-            type = mujoco.mjtGeom.mjGEOM_ARROW, size = arrow_dim,\
-            pos = arrow_pos, mat = arrow_mat.flatten(), rgba = arrow_color)
-
-def draw_vector_euler(scene, idx, arrow_pos, arrow_color, arrow_norm, euler_ang):
-    
-    # mujoco.mju_copy(loc_force, arrow_dir)
-    # mujoco.mju_normalize (loc_force)
-    # mujoco.mju_quatZ2Vec(arrow_quat, loc_force)
-    # mujoco.mju_quat2Mat(arrow_mat, arrow_quat)
-    
-    # arrow_quat = np.zeros(4)
-    # arrow_mat =
-    
-    global arrow_mat, arrow_quat
-    
-    mujoco.mju_euler2Quat(arrow_quat, euler_ang, "XYZ")
-    mujoco.mju_quat2Mat(arrow_mat, arrow_quat)
-    mujoco.mju_copy(arrow_dim, arrow_shape)
-    arrow_dim [2] = arrow_shape [2] * arrow_norm
-    mujoco.mjv_initGeom(scene.geoms[idx],\
-            type = mujoco.mjtGeom.mjGEOM_ARROW, size = arrow_dim,\
-            pos = arrow_pos, mat = arrow_mat.flatten(), rgba = arrow_color)
 
 appl_force = np.zeros(3)
 com_cont_force = np.zeros(3)
@@ -1221,7 +1258,7 @@ def control_callback (model, data):
     
 
 
-    if automated_jump and abs(data.time - 5) < model.opt.timestep and curr_phase == 0:
+    if automated_jump and abs(data.time - jump_time) < model.opt.timestep and curr_phase == 0:
         curr_phase = 1
 
     if data.time >= 0.5 and del_cont and (not cont_started):
@@ -1328,7 +1365,7 @@ def control_callback (model, data):
         gamma_acc_1 = freq_alpha_1_acc
     else:
         gamma_w_1 = 0
-        gamma_acc_1 = freq_theta_w
+        gamma_acc_1 = freq_alpha_1_w
         
     
     if curr_phase == 0:
@@ -1354,12 +1391,19 @@ def control_callback (model, data):
     smoothing_fact = activation_sigmoid(0, 0.4, 0, 1, data.time - phase_start)
     
     
-    # ref_vel = gamma_v * (des_pos - curr_pos)
-    ref_vel = gamma_v * (des_pos - curr_pos) * smoothing_fact
-    ref_vel += des_vel
-    
+    if curr_phase != 2:
+        # ref_vel = gamma_v * (des_pos - curr_pos)
+        ref_vel = gamma_v * (des_pos - curr_pos) * smoothing_fact
+        ref_vel += des_vel
+    else:
+        ref_vel = des_vel
     # ref_vel*= smoothing_fact
-    
+    max_vel = 100
+    if data.sensor("feet_touch_sensor").data > ground_force_threshold and curr_phase == 0:
+        max_vel = max_vel_ground
+    else:
+        max_vel = max_vel_flight
+    # max_vel = max_vel_flight
     ref_vel_max = np.linalg.norm(ref_vel)
     if ref_vel_max > max_vel:
         ref_vel*= max_vel / ref_vel_max
@@ -1407,6 +1451,8 @@ def control_callback (model, data):
     if data.sensor("feet_touch_sensor").data > ground_force_threshold and curr_phase == 0 and ground_alpha_cont:
         com_cont_force*= 0
     
+    if data.time < 0.5 and del_cont:
+        com_cont_force*= 0
     
     # cont_force.shape = ((-1, 1))
     # cont_force+= m_l1 * l_l1 / 2 * (a1_acc * np.array([- cos(x4), 0, sin(x4)]).reshape((-1, 1)) + x8**2 * np.array([sin(x4), 0, cos(x4)]).reshape((-1, 1)))
@@ -1425,12 +1471,15 @@ def control_callback (model, data):
     if data.sensor("feet_touch_sensor").data > ground_force_threshold:
         ref_w_1 = gamma_w_1 * (des_a1 - x4)
     
-    # ref_w1_max = np.linalg.norm(ref_w_1)
-    # if ref_w1_max > max_w:
-    #     ref_w_1*= max_w / ref_w1_max
+        ref_w1_max = np.linalg.norm(ref_w_1)
+        if ref_w1_max > max_w:
+            ref_w_1*= max_w / ref_w1_max
 
     
-    
+    # if curr_phase == 1:
+    #     print (gamma_acc_1)
+
+
     ref_a_1 = gamma_acc_1 * (ref_w_1 - x8) 
     
     # print (ref_a_1, max_rot_acc)
@@ -1451,6 +1500,14 @@ def control_callback (model, data):
     des_M_1 = I_l1 * ref_a_1
 
     des_M_1+= damp_coeff * (x8 - x7)
+    # des_M_1-= damp_coeff * (x8 - x7)
+    
+
+    if data.sensor("feet_touch_sensor").data > ground_force_threshold and (not ground_alpha_cont):
+        des_M_1*= 0
+    
+    if data.time < 0.5 and del_cont:
+        des_M_1*= 0
     
     # goal_alpha_1.append(des_a1)
     # goal_w_1.append(x7.copy())
@@ -1461,11 +1518,11 @@ def control_callback (model, data):
     
     # a1_cont_force*= 0
     
-    if data.sensor("feet_touch_sensor").data > ground_force_threshold and (not ground_alpha_cont):
-        a1_cont_force*= 0
-        a1_cont_force*= 0.2
+    # if data.sensor("feet_touch_sensor").data > ground_force_threshold and (not ground_alpha_cont):
+    #     a1_cont_force*= 0
+    #     # a1_cont_force*= 0.2
 
-        
+    
     
         
     
@@ -1503,7 +1560,7 @@ def control_callback (model, data):
     
     # ref_w*= smoothing_fact
     ref_w_max = np.linalg.norm(ref_w)
-    if ref_w_max > max_w:
+    if w_bar_sat and ref_w_max > max_w:
         ref_w*= max_w / ref_w_max
 
     # if abs(x7) > max_w and abs (ref_w) > abs (x7):
@@ -1542,6 +1599,7 @@ def control_callback (model, data):
     des_M_bar = I_b * ref_acc_b
 
     des_M_bar+= damp_coeff * (x7 - x8)
+    # des_M_bar-= damp_coeff * (x7 - x8)
 
     rot_int = des_M_bar / l_b
 
@@ -2066,7 +2124,7 @@ def draw_trajectory(viewer, start_pos, vx, vz0, a, t, t_inc, traj_color):
     
     return next_traj_pos[2]
 
-def draw_trajectory_multiscene(viewer, scene_2, start_pos, vx, vz0, a, t, t_inc, traj_color, idx):
+def draw_trajectory_multiscene(viewer, renderer, start_pos, vx, vz0, a, t, t_inc, traj_color, idx):
     curr_traj_pos = start_pos.reshape((-1, 1)) + np.array([vx * t, 0, vz0 * t + a / 2 * t**2]).reshape((-1, 1))
     t+= t_inc
     next_traj_pos = start_pos.reshape((-1, 1)) + np.array([jump_vx * t, 0, jump_v_z_0 * t + jump_acc / 2 * t**2]).reshape((-1, 1))
@@ -2074,16 +2132,16 @@ def draw_trajectory_multiscene(viewer, scene_2, start_pos, vx, vz0, a, t, t_inc,
         mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
     
     mujoco.mjv_initGeom(viewer.user_scn.geoms[viewer.user_scn.ngeom],
-                      mujoco.mjtGeom.mjGEOM_LINE, np.zeros(3),
+                      mujoco.mjtGeom.mjGEOM_CAPSULE, np.zeros(3),
                       np.zeros(3), np.zeros(9), traj_color)
-    mujoco.mjv_initGeom(scene_2.geoms[scene_2.ngeom+idx],
-                      mujoco.mjtGeom.mjGEOM_LINE, np.zeros(3),
+    mujoco.mjv_initGeom(renderer.scene.geoms[renderer.scene.ngeom+idx],
+                      mujoco.mjtGeom.mjGEOM_CAPSULE, np.zeros(3),
                       np.zeros(3), np.zeros(9), traj_color)
     # print (curr_traj_pos, next_traj_pos)
     mujoco.mjv_connector(viewer.user_scn.geoms[viewer.user_scn.ngeom],
                        mujoco.mjtGeom.mjGEOM_CAPSULE, traj_radius,
                        curr_traj_pos, next_traj_pos)
-    mujoco.mjv_connector(scene_2.geoms[scene_2.ngeom + idx + 1],
+    mujoco.mjv_connector(renderer.scene.geoms[renderer.scene.ngeom + idx],
                        mujoco.mjtGeom.mjGEOM_CAPSULE, traj_radius,
                        curr_traj_pos, next_traj_pos)
     
@@ -2091,7 +2149,71 @@ def draw_trajectory_multiscene(viewer, scene_2, start_pos, vx, vz0, a, t, t_inc,
     viewer.user_scn.ngeom+= 1
     idx+= 1
     
-    return next_traj_pos[2], idx 
+    return next_traj_pos[2], idx
+ 
+
+def draw_object(view_scene, idx, type, size, pos, mat, rgba):
+    mujoco.mjv_initGeom(view_scene.geoms[idx], type, size, pos, mat, rgba)
+
+def draw_object_multiscene(view_scene, rend_scene, idx, type, size, pos, mat, rgba):
+    # mujoco.mjv_initGeom(viewer.user_scn.geoms[0],\
+    #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
+    #     pos = data.site("IMU_1_loc").xpos, mat = np.eye(3).flatten(), rgba = blue_color)
+    # mujoco.mjv_initGeom(renderer.scene.geoms[default_rend_objects],\
+    #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
+    #     pos = data.site("IMU_1_loc").xpos, mat = np.eye(3).flatten(), rgba = blue_color)
+    mujoco.mjv_initGeom(view_scene.geoms[idx], type, size, pos, mat, rgba)
+    mujoco.mjv_initGeom(rend_scene.geoms[default_rend_objects+idx], type, size, pos, mat, rgba)
+
+
+def draw_vector(scene, idx, arrow_pos, arrow_color, arrow_dir, arrow_norm):
+    
+    mujoco.mju_copy(loc_force, arrow_dir)
+    mujoco.mju_normalize (loc_force)
+    mujoco.mju_quatZ2Vec(arrow_quat, loc_force)
+    mujoco.mju_quat2Mat(arrow_mat, arrow_quat)
+    mujoco.mju_copy(arrow_dim, arrow_shape)
+    arrow_dim [2] = arrow_shape [2] * arrow_norm
+    mujoco.mjv_initGeom(scene.geoms[idx],\
+            type = mujoco.mjtGeom.mjGEOM_ARROW, size = arrow_dim,\
+            pos = arrow_pos, mat = arrow_mat.flatten(), rgba = arrow_color)
+
+def draw_vector_multiscene(viewer_scene, rend_scene, idx, arrow_pos, arrow_color, arrow_dir, arrow_norm):
+    
+    mujoco.mju_copy(loc_force, arrow_dir)
+    mujoco.mju_normalize (loc_force)
+    mujoco.mju_quatZ2Vec(arrow_quat, loc_force)
+    mujoco.mju_quat2Mat(arrow_mat, arrow_quat)
+    mujoco.mju_copy(arrow_dim, arrow_shape)
+    arrow_dim [2] = arrow_shape [2] * arrow_norm
+    mujoco.mjv_initGeom(viewer_scene.geoms[idx],\
+            type = mujoco.mjtGeom.mjGEOM_ARROW, size = arrow_dim,\
+            pos = arrow_pos, mat = arrow_mat.flatten(), rgba = arrow_color)
+    mujoco.mjv_initGeom(rend_scene.geoms[default_rend_objects+idx],\
+            type = mujoco.mjtGeom.mjGEOM_ARROW, size = arrow_dim,\
+            pos = arrow_pos, mat = arrow_mat.flatten(), rgba = arrow_color)
+
+def draw_vector_euler(scene, idx, arrow_pos, arrow_color, arrow_norm, euler_ang):
+    
+    # mujoco.mju_copy(loc_force, arrow_dir)
+    # mujoco.mju_normalize (loc_force)
+    # mujoco.mju_quatZ2Vec(arrow_quat, loc_force)
+    # mujoco.mju_quat2Mat(arrow_mat, arrow_quat)
+    
+    # arrow_quat = np.zeros(4)
+    # arrow_mat =
+    
+    global arrow_mat, arrow_quat
+    
+    mujoco.mju_euler2Quat(arrow_quat, euler_ang, "XYZ")
+    mujoco.mju_quat2Mat(arrow_mat, arrow_quat)
+    mujoco.mju_copy(arrow_dim, arrow_shape)
+    arrow_dim [2] = arrow_shape [2] * arrow_norm
+    mujoco.mjv_initGeom(scene.geoms[idx],\
+            type = mujoco.mjtGeom.mjGEOM_ARROW, size = arrow_dim,\
+            pos = arrow_pos, mat = arrow_mat.flatten(), rgba = arrow_color)
+
+
 model.vis.scale.contactheight = 1
 model.vis.scale.forcewidth = 0.02
 # model.vis.scale.forceheight = 10
@@ -2110,12 +2232,18 @@ cont_forces = np.zeros(6)
 #     dest_scn.geoms = source_scn.geoms.copy()
 #     dest_scn.ngeom = source_scn.ngeom.copy()
 
-
+del config
 # print (dir(mujoco.viewer))
 
-# rend_freq = 30
-# rend_count = 0
-# rend_count_max = round(1 / rend_freq / dt)
+rend_freq = 30
+rend_count = 0
+rend_count_max = round(1 / rend_freq / dt)
+
+# rend_height = 480
+# rend_width = 640
+
+rend_height = 720
+rend_width = 1280
 
 # print (rend_count_max)
 # mediapy.set_show_save_dir("./sim_recording")
@@ -2128,8 +2256,11 @@ cont_forces = np.zeros(6)
 # with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback) as viewer:
 with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_left_ui = False, show_right_ui = False) as viewer:
 # with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_left_ui = False, show_right_ui = False) as viewer, mujoco.Renderer(model) as renderer:
-    
+    if render:
+        renderer = mujoco.Renderer(model, rend_height, rend_width)
     viewer.lock()
+    
+    """
     # print ("viewer launched")
     # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_CONTACT
     # viewer.opt.frame = mujoco.mjtFrame.mjFRAME_WORLD
@@ -2155,49 +2286,11 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_l
     # print (int(mujoco.mjtFrame.mjFRAME_CONTACT), int(mujoco.mjtFrame.mjFRAME_WORLD), int(mujoco.mjtFrame.mjFRAME_CONTACT | mujoco.mjtFrame.mjFRAME_WORLD))
     
     # print (dir(viewer.user_scn))
-    """ for i in range (model.nsite + model.njnt):
-        mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn) """
+    # for i in range (model.nsite + model.njnt):
+    #     mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
     
     # print (viewer.user_scn.maxgeom)
     # print (viewer.user_scn.ngeom)
-    # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-    # # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, renderer.scene)
-
-    # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-    # # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, renderer.scene)
-    
-    # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-    # # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, renderer.scene)
-    
-    # #cont force displayer
-    # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-    # # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, renderer.scene)
-    
-    # #des_pose displayer
-    # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-    # # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, renderer.scene)
-    
-    # #COM_displayer
-    # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-    # # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, renderer.scene)
-    
-    # #second IMU displayer
-    # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-    # # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, renderer.scene)
-
-    # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-    # # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, renderer.scene)
-
-    # #virtual aplied force
-    # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-    # # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, renderer.scene)
-    # #bar orientation
-    # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-    # # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, renderer.scene)
-    
-    
-    # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, viewer.user_scn)
-    # # mujoco.mjv_addGeoms(model, data, viewer.opt, viewer.perturb, mujoco.mjtCatBit.mjCAT_DECOR, renderer.scene)
     
     
     # print (dir(viewer))
@@ -2209,7 +2302,13 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_l
     # print(dir(model.tex_data))
     
     #print ('simulation setup completed')
+    """
     viewer.sync()
+
+    if render:
+        renderer.update_scene(data, viewer.cam)
+
+        default_rend_objects = renderer.scene.ngeom
     
     # print ("starting loop")
     #print (mujoco.mjtCatBit.mjCAT_ALL)
@@ -2243,6 +2342,10 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_l
                 # mujoco.mj_step1(model, data)
                 # f1 = data.actuator("propeller1").ctrl.copy()
                 # f2 = data.actuator("propeller2").ctrl.copy()
+
+                if render and rend_count == 0:
+                    # print ("rendering scene for recording")
+                    renderer.update_scene(data, viewer.cam)
                 
                 # print (enumerate(data.contact))
                 
@@ -2621,44 +2724,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_l
                 # mujoco.mj_step(model, data)
                 
                 C_b_sim = data.qpos[:3]
-                
-                # mujoco.mjv_initGeom(viewer.user_scn.geoms[0],\
-                #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
-                #     pos = C_b_sim, mat = np.eye(3).flatten(), rgba = blue_color)
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[0],\
-                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
-                    pos = data.site("IMU_1_loc").xpos, mat = np.eye(3).flatten(), rgba = blue_color)
-                # mujoco.mjv_initGeom(renderer.scene.geoms[0],\
-                #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
-                #     pos = data.site("IMU_1_loc").xpos, mat = np.eye(3).flatten(), rgba = blue_color)
-                
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[1],\
-                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
-                    pos = data.site("IMU_2_loc").xpos, mat = np.eye(3).flatten(), rgba = yellow_color)
-                # mujoco.mjv_initGeom(renderer.scene.geoms[1],\
-                #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
-                #     pos = data.site("IMU_2_loc").xpos, mat = np.eye(3).flatten(), rgba = yellow_color)
-                
-                #goal position
-                # tr_rot_mat = np.zeros(9)
-                # tr_rot_quat = np.zeros(4)
-                # tr_rot_axis = np.array([1, 0, 0])
-                # tr_rot_angle = math.pi / 2
-                # mujoco.mju_axisAngle2Quat(tr_rot_quat, tr_rot_axis, tr_rot_angle)
-                # mujoco.mju_quat2Mat(tr_rot_mat, tr_rot_quat)
-                # print (tr_rot_mat)
-                
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[2],\
-                    type = mujoco.mjtGeom.mjGEOM_ELLIPSOID, size = np.array([0.04, 0.02, 0.02]),\
-                    pos = des_pos, mat = np.eye(3).flatten(), rgba = orange_color)
-                # mujoco.mjv_initGeom(renderer.scene.geoms[2],\
-                #     type = mujoco.mjtGeom.mjGEOM_ELLIPSOID, size = np.array([0.04, 0.02, 0.02]),\
-                #     pos = des_pos, mat = np.eye(3).flatten(), rgba = orange_color)
-                # mujoco.mjv_initGeom(viewer.user_scn.geoms[2],\
-                #     type = mujoco.mjtGeom.mjGEOM_TRIANGLE, size = np.array([0.02, 0.02, 0.02]),\
-                #     pos = des_pos, mat = tr_rot_mat, rgba = orange_color)
-                
-                
+
                 x1 = ekf_theta.x[0, 0]
                 z1 = ekf_theta.x[1, 0]
                 theta = ekf_theta.x[2, 0]
@@ -2678,85 +2744,114 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_l
                 # print(curr_bar_eul)
                 C_t_sim = np.array([data.qpos[0], 0, data.qpos[2]]) - m_l1 / m_tot * l_l1 / 2 * np.array([sin(data.qpos[7] + curr_bar_eul[1]), 0, cos(data.qpos[7] + curr_bar_eul[1])])
                 
+                if not render:
+                    # mujoco.mjv_initGeom(viewer.user_scn.geoms[0],\
+                    #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
+                    #     pos = C_b_sim, mat = np.eye(3).flatten(), rgba = blue_color)
+                    mujoco.mjv_initGeom(viewer.user_scn.geoms[0],\
+                        type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .03 * np.ones(3),\
+                        pos = data.site("IMU_1_loc").xpos, mat = np.eye(3).flatten(), rgba = green_color)
+                    # mujoco.mjv_initGeom(renderer.scene.geoms[0],\
+                    #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
+                    #     pos = data.site("IMU_1_loc").xpos, mat = np.eye(3).flatten(), rgba = blue_color)
+                    
+                    mujoco.mjv_initGeom(viewer.user_scn.geoms[1],\
+                        type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .03 * np.ones(3),\
+                        pos = data.site("IMU_2_loc").xpos, mat = np.eye(3).flatten(), rgba = yellow_color)
+                    # mujoco.mjv_initGeom(renderer.scene.geoms[1],\
+                    #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .06 * np.ones(3),\
+                    #     pos = data.site("IMU_2_loc").xpos, mat = np.eye(3).flatten(), rgba = yellow_color)
+                    
+                    
+                    
+                    mujoco.mjv_initGeom(viewer.user_scn.geoms[2],\
+                            type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
+                            pos = data.subtree_com[0], mat = np.eye(3).flatten(), rgba = blue_color)
+                    
+                    
+                    
+                    
+                    
+                    
+                    mujoco.mjv_initGeom(viewer.user_scn.geoms[3],\
+                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                        pos = C_b_est, mat = np.eye(3).flatten(), rgba = transp_green_color)
+                    # mujoco.mjv_initGeom(renderer.scene.geoms[3],\
+                    #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    #     pos = C_b_est, mat = np.eye(3).flatten(), rgba = transp_green_color)
+                    
+                    mujoco.mjv_initGeom(viewer.user_scn.geoms[4],\
+                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                        pos = p_prop_2, mat = np.eye(3).flatten(), rgba = cyan_color)
+                    # mujoco.mjv_initGeom(renderer.scene.geoms[4],\
+                    #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    #     pos = p_prop_2, mat = np.eye(3).flatten(), rgba = cyan_color)
+                    
+                    # COM position
+                    mujoco.mjv_initGeom(viewer.user_scn.geoms[5],\
+                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                        pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_yellow_color)
+                    # mujoco.mjv_initGeom(renderer.scene.geoms[5],\
+                    #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    #     pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_orange_color)
+                    
+                    mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
+                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                        pos = C_t_est, mat = np.eye(3).flatten(), rgba = transp_blue_color)
+                    # mujoco.mjv_initGeom(renderer.scene.geoms[6],\
+                    #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                    #     pos = C_t_est, mat = np.eye(3).flatten(), rgba = transp_blue_color)
+                    
+                    
+                    
+                    
+                    # mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
+                    #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
+                    #     pos = C_t_sim, mat = np.eye(3).flatten(), rgba = green_color)
                 
-                
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[3],\
-                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                    pos = C_b_est, mat = np.eye(3).flatten(), rgba = transp_green_color)
-                # mujoco.mjv_initGeom(renderer.scene.geoms[3],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = C_b_est, mat = np.eye(3).flatten(), rgba = transp_green_color)
-                
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[4],\
-                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                    pos = p_prop_2, mat = np.eye(3).flatten(), rgba = cyan_color)
-                # mujoco.mjv_initGeom(renderer.scene.geoms[4],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = p_prop_2, mat = np.eye(3).flatten(), rgba = cyan_color)
-                
-                # COM position
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[5],\
-                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                    pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_orange_color)
-                # mujoco.mjv_initGeom(renderer.scene.geoms[5],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_orange_color)
-                
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
-                    type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                    pos = C_t_est, mat = np.eye(3).flatten(), rgba = transp_blue_color)
-                # mujoco.mjv_initGeom(renderer.scene.geoms[6],\
-                #     type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
-                #     pos = C_t_est, mat = np.eye(3).flatten(), rgba = transp_blue_color)
-                
-                
-                
-                
-                # mujoco.mjv_initGeom(viewer.user_scn.geoms[6],\
-                #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
-                #     pos = C_t_sim, mat = np.eye(3).flatten(), rgba = green_color)
-            
-                
-                # bar_rot = np.array([0, data.qpos[0] + data.qpos[1], 0])
-                
-                # draw_vector_euler(viewer, 4, data.site("prop_1").xpos, red_color, k_f * data.actuator("propeller1").ctrl, bar_rot)
-                # draw_vector_euler(viewer, 5, data.site("prop_2").xpos, red_color, k_f * data.actuator("propeller2").ctrl, bar_rot)
-                # draw_vector(viewer, 2, data.site("IMU_loc").xpos, red_color, appl_force, k_f * mujoco.mju_norm(appl_force))
-                
-                #control force
-                # draw_vector(viewer, 6, data.site("IMU_loc").xpos, cyan_color, cont_force, 5 * k_f * mujoco.mju_norm(cont_force))
-                
-                
-                
-                
-                
-                #virtual applied force
-                # draw_vector(viewer, 8, data.site("IMU_1_loc").xpos, white_color, appl_force,  k_f * mujoco.mju_norm(appl_force))
-                # draw_vector(viewer, 7, data.site("IMU_1_loc").xpos, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
-                # draw_vector(viewer, 7, C_t_est, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
-                draw_vector(viewer.user_scn, 7, C_b_sim, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
-                # draw_vector(renderer.scene, 7, C_b_sim, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
-                
-                draw_vector(viewer.user_scn, 8, C_b_sim, blue_color, a1_cont_force,  30 * k_f * mujoco.mju_norm(a1_cont_force))
-                # draw_vector(renderer.scene, 8, C_b_sim, blue_color, a1_cont_force,  30 * k_f * mujoco.mju_norm(a1_cont_force))
-                
-                draw_vector(viewer.user_scn, 9, C_b_sim, green_color, com_cont_force,  30 * k_f * mujoco.mju_norm(com_cont_force))
-                # draw_vector(renderer.scene, 9, C_b_sim, green_color, com_cont_force,  30 * k_f * mujoco.mju_norm(com_cont_force))
-                # draw_vector(viewer, 9, C_b_sim, green_color, com_cont_force, 1)
-                
-                # draw_vector_euler(viewer, 9, C_b_sim, green_color, 0.2, bar_rot)
-                
-                
-                # print (COM_pos[:, -1])
-                mujoco.mjv_initGeom(viewer.user_scn.geoms[10],\
-                    type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
-                    pos = data.subtree_com[0], mat = np.eye(3).flatten(), rgba = red_color)
-                # mujoco.mjv_initGeom(renderer.scene.geoms[10],\
-                #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
-                #     pos = data.subtree_com[0], mat = np.eye(3).flatten(), rgba = red_color)
+                    
+                    # bar_rot = np.array([0, data.qpos[0] + data.qpos[1], 0])
+                    
+                    # draw_vector_euler(viewer, 4, data.site("prop_1").xpos, red_color, k_f * data.actuator("propeller1").ctrl, bar_rot)
+                    # draw_vector_euler(viewer, 5, data.site("prop_2").xpos, red_color, k_f * data.actuator("propeller2").ctrl, bar_rot)
+                    # draw_vector(viewer, 2, data.site("IMU_loc").xpos, red_color, appl_force, k_f * mujoco.mju_norm(appl_force))
+                    
+                    #control force
+                    # draw_vector(viewer, 6, data.site("IMU_loc").xpos, cyan_color, cont_force, 5 * k_f * mujoco.mju_norm(cont_force))
+                    
+                    
+                    
+                    
+                    
+                    #virtual applied force
+                    # draw_vector(viewer, 8, data.site("IMU_1_loc").xpos, white_color, appl_force,  k_f * mujoco.mju_norm(appl_force))
+                    # draw_vector(viewer, 7, data.site("IMU_1_loc").xpos, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
+                    # draw_vector(viewer, 7, C_t_est, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
+                    draw_vector(viewer.user_scn, 7, C_b_sim, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
+                    # draw_vector(renderer.scene, 7, C_b_sim, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
+                    
+                    draw_vector(viewer.user_scn, 8, C_b_sim, blue_color, a1_cont_force,  30 * k_f * mujoco.mju_norm(a1_cont_force))
+                    # draw_vector(renderer.scene, 8, C_b_sim, blue_color, a1_cont_force,  30 * k_f * mujoco.mju_norm(a1_cont_force))
+                    
+                    draw_vector(viewer.user_scn, 9, C_b_sim, green_color, com_cont_force,  30 * k_f * mujoco.mju_norm(com_cont_force))
+                    # draw_vector(renderer.scene, 9, C_b_sim, green_color, com_cont_force,  30 * k_f * mujoco.mju_norm(com_cont_force))
+                    # draw_vector(viewer, 9, C_b_sim, green_color, com_cont_force, 1)
+                    
+                    # draw_vector_euler(viewer, 9, C_b_sim, green_color, 0.2, bar_rot)
+                    
+                    
+                    # print (COM_pos[:, -1])
+                    if curr_phase!=2:
+                        mujoco.mjv_initGeom(viewer.user_scn.geoms[10],\
+                        type = mujoco.mjtGeom.mjGEOM_ELLIPSOID, size = np.array([0.04, 0.02, 0.02]),\
+                        pos = des_pos, mat = np.eye(3).flatten(), rgba = orange_color)
+                        # mujoco.mjv_initGeom(renderer.scene.geoms[10],\
+                        #     type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
+                        #     pos = data.subtree_com[0], mat = np.eye(3).flatten(), rgba = red_color)
 
-                viewer.user_scn.ngeom =  11
-
+                        viewer.user_scn.ngeom =  11
+                    else:
+                        viewer.user_scn.ngeom =  10
                 # y_axis = np.array([0, 1, 0])
                 # M_dir = -y_axis if des_M_1 < 0 else y_axis
 
@@ -2764,43 +2859,132 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_l
                 
                 # viewer.user_scn.ngeom =  12
                 
-                if curr_phase == 1 and not drawn_traj:
-                    t = data.time-phase_start
-                    while True:
+                    if curr_phase == 1 and not drawn_traj:
+                        t = data.time-phase_start
+                        while True:
+                            
+                            fin_traj_z = draw_trajectory(viewer, start_des_pos, jump_vx, jump_v_z_0, jump_acc, t, t_inc, green_color)
+                            # fin_traj_z = draw_trajectory_multiscene(viewer, renderer.scene, start_des_pos, jump_vx, jump_v_z_0, jump_acc, t, t_inc, green_color)
+                            t+= t_inc
+                            if fin_traj_z <= 0:
+                                break
+                        traj_ngeoms = viewer.user_scn.ngeom
+                        drawn_traj = True
+                        print ("computed trajectory")
                         
-                        fin_traj_z = draw_trajectory(viewer, start_des_pos, jump_vx, jump_v_z_0, jump_acc, t, t_inc, green_color)
-                        # fin_traj_z = draw_trajectory_multiscene(viewer, renderer.scene, start_des_pos, jump_vx, jump_v_z_0, jump_acc, t, t_inc, green_color)
-                        t+= t_inc
-                        if fin_traj_z <= 0:
-                            break
-                    traj_ngeoms = viewer.user_scn.ngeom
-                    drawn_traj = True
-                    print ("computed trajectory")
+                    if curr_phase == 1:
+                        viewer.user_scn.ngeom = traj_ngeoms
+                        # renderer.scene.ngeom = traj_ngeoms
+
+                else:
+                    draw_object_multiscene(viewer.user_scn, renderer.scene, 0,\
+                        type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .03 * np.ones(3),\
+                        pos = data.site("IMU_1_loc").xpos, mat = np.eye(3).flatten(), rgba = green_color)
                     
-                if curr_phase == 1:
-                    viewer.user_scn.ngeom = traj_ngeoms
-                    # renderer.scene.ngeom = traj_ngeoms
+                    draw_object_multiscene(viewer.user_scn, renderer.scene, 1,\
+                        type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .03 * np.ones(3),\
+                        pos = data.site("IMU_2_loc").xpos, mat = np.eye(3).flatten(), rgba = yellow_color)
+                    
+                    
+                    draw_object_multiscene(viewer.user_scn, renderer.scene, 2,\
+                        type = mujoco.mjtGeom.mjGEOM_LINEBOX, size = .025 * np.ones(3),\
+                            pos = data.subtree_com[0], mat = np.eye(3).flatten(), rgba = blue_color)
+                    
+                    draw_object_multiscene(viewer.user_scn, renderer.scene, 3,\
+                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                        pos = C_b_est, mat = np.eye(3).flatten(), rgba = transp_green_color)
+                    
+                    draw_object_multiscene(viewer.user_scn, renderer.scene, 4,\
+                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                        pos = p_prop_2, mat = np.eye(3).flatten(), rgba = cyan_color)
+                    
+                    # COM position
+                    draw_object_multiscene(viewer.user_scn, renderer.scene, 5,\
+                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                        # pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_orange_color)
+                        pos = C_l1_est, mat = np.eye(3).flatten(), rgba = transp_yellow_color)
+                    
+                    draw_object_multiscene(viewer.user_scn, renderer.scene, 6,\
+                        type = mujoco.mjtGeom.mjGEOM_SPHERE, size = .03 * np.ones(3),\
+                        pos = C_t_est, mat = np.eye(3).flatten(), rgba = transp_blue_color)
+                    
+                    
+                    # draw_vector_euler(viewer, 4, data.site("prop_1").xpos, red_color, k_f * data.actuator("propeller1").ctrl, bar_rot)
+                    # draw_vector_euler(viewer, 5, data.site("prop_2").xpos, red_color, k_f * data.actuator("propeller2").ctrl, bar_rot)
+                    # draw_vector(viewer, 2, data.site("IMU_loc").xpos, red_color, appl_force, k_f * mujoco.mju_norm(appl_force))
+                    
+                    #control force
+                    # draw_vector(viewer, 6, data.site("IMU_loc").xpos, cyan_color, cont_force, 5 * k_f * mujoco.mju_norm(cont_force))
+                    
+                    
+                    
+                    
+                    
+                    #virtual applied force
+                    draw_vector_multiscene(viewer.user_scn, renderer.scene, 7, C_b_sim, white_color, cont_force,  30 * k_f * mujoco.mju_norm(cont_force))
+                    
+                    draw_vector_multiscene(viewer.user_scn, renderer.scene, 8, C_b_sim, blue_color, a1_cont_force,  30 * k_f * mujoco.mju_norm(a1_cont_force))
+                    
+                    draw_vector_multiscene(viewer.user_scn, renderer.scene, 9, C_b_sim, green_color, com_cont_force,  30 * k_f * mujoco.mju_norm(com_cont_force))
+                    if curr_phase!=2:
+                        draw_object_multiscene(viewer.user_scn, renderer.scene, 10,\
+                            type = mujoco.mjtGeom.mjGEOM_ELLIPSOID, size = np.array([0.04, 0.02, 0.02]),\
+                            pos = des_pos, mat = np.eye(3).flatten(), rgba = orange_color)
 
-                # renderer.scene = viewer.user_scn.copy()
-                # renderer.scene = viewer.user_scn
-                # tmp_scene = viewer.user_scn
+                        added_geoms = 11
+                    else:
+                        added_geoms =  10
+                    
 
-                # copy_scene(viewer.user_scn, renderer.scene)
+                        
+                    viewer.user_scn.ngeom = added_geoms
+                    renderer.scene.ngeom = default_rend_objects + added_geoms
 
+                    # y_axis = np.array([0, 1, 0])
+                    # M_dir = -y_axis if des_M_1 < 0 else y_axis
 
-                # if rend_count == 0:
-                #     print ("rendering scene for recording")
-                #     renderer.update_scene(data)
-                #     curr_frame = renderer.render()
-
-                #     video_frames.append(curr_frame)
+                    # draw_vector(viewer.user_scn, 11, C_b_sim, cyan_color, M_dir, abs(des_M_1))
+                    
+                    # viewer.user_scn.ngeom =  12
                 
-                # rend_count+= 1
-                # rend_count = rend_count%rend_count_max
+                    if curr_phase == 1 and not drawn_traj:
+                        t = data.time-phase_start
+                        idx = 0
+                        while True:
+                            
+                            # fin_traj_z = draw_trajectory(viewer, start_des_pos, jump_vx, jump_v_z_0, jump_acc, t, t_inc, green_color)
+                            # fin_traj_z, idx = draw_trajectory_multiscene(viewer, renderer.scene, start_des_pos, jump_vx, jump_v_z_0, jump_acc, t, t_inc, green_color, idx)
+                            fin_traj_z, idx = draw_trajectory_multiscene(viewer, renderer, start_des_pos, jump_vx, jump_v_z_0, jump_acc, t, t_inc, green_color, idx)
+                            t+= t_inc
+                            # print (idx)
+                            if fin_traj_z <= 0:
+                                break
+                        traj_ngeoms = viewer.user_scn.ngeom
+                        drawn_traj = True
+                        print ("computed trajectory")
+                        
+                    if curr_phase == 1:
+                        viewer.user_scn.ngeom = traj_ngeoms
+                        # renderer.scene.ngeom += traj_ngeoms - added_geoms
+                        renderer.scene.ngeom = default_rend_objects + traj_ngeoms
+                    
+
+                    if rend_count == 0:
+
+                        curr_frame = renderer.render()
+
+                        video_frames.append(curr_frame)
+                    
+                    rend_count+= 1
+                    rend_count = rend_count%rend_count_max
+                
 
 
                 
                 mujoco.mj_step(model, data)
+                if data.warning[mujoco.mjtWarning.mjWARN_BADQACC].number > 0:
+                    print ('simulation instability warning, exiting')
+                    break
                 # try:
                 #     mujoco.mj_step(model, data)
                 # except Exception as e:
@@ -2821,6 +3005,10 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_l
             # print(time_to_step)
             if (time_to_step > 0):
                 time.sleep(time_to_step)
+
+    if render:
+        renderer.close()
+
 # except Exception as e:
 #     print (e)
 
@@ -2856,108 +3044,218 @@ with mujoco.viewer.launch_passive(model, data, key_callback= kb_callback, show_l
 csv_name = './data_to_plot/jumping_cont_data.csv'
 
 data_len = len(sim_time)
+print (sim_time[-1])
 
 with open(csv_name, 'w', newline = '') as csvfile:
     data_writer = csv.writer(csvfile)
     
     # data_writer.writerow(data_len)
-    
-    data_writer.writerow(np.append(sim_time, '\b'))
-    
-    data_writer.writerow(np.append(sim_x1_acc, '\b'))
-    data_writer.writerow(np.append(sim_z1_acc, '\b'))
-    data_writer.writerow(np.append(sim_theta_acc, '\b'))
-    data_writer.writerow(np.append(sim_alpha_1_acc, '\b'))
-    
-    data_writer.writerow(np.append(est_x1_acc, '\b'))
-    data_writer.writerow(np.append(est_z1_acc, '\b'))
-    data_writer.writerow(np.append(est_theta_acc, '\b'))
-    data_writer.writerow(np.append(est_alpha_1_acc, '\b'))
-    
-    data_writer.writerows(np.concatenate((sim_meas, np.array(['\b', '\b', '\b', '\b', '\b', '\b']).reshape((-1, 1))), axis=1))
-    data_writer.writerows(np.concatenate((est_meas, np.array(['\b', '\b', '\b', '\b', '\b', '\b']).reshape((-1, 1))), axis=1))
-    
-    data_writer.writerow(np.append(sim_x1, '\b'))
-    data_writer.writerow(np.append(sim_z1, '\b'))
-    data_writer.writerow(np.append(sim_theta, '\b'))
-    data_writer.writerow(np.append(sim_alpha_1, '\b'))
-    
-    data_writer.writerow(np.append(est_x1, '\b'))
-    data_writer.writerow(np.append(est_z1, '\b'))
-    data_writer.writerow(np.append(est_theta, '\b'))
-    data_writer.writerow(np.append(est_alpha_1, '\b'))
-    
-    data_writer.writerow(np.append(sim_x1_vel, '\b'))
-    data_writer.writerow(np.append(sim_z1_vel, '\b'))
-    data_writer.writerow(np.append(sim_theta_vel, '\b'))
-    data_writer.writerow(np.append(sim_alpha_1_vel, '\b'))
-    
-    data_writer.writerow(np.append(est_x1_vel, '\b'))
-    data_writer.writerow(np.append(est_z1_vel, '\b'))
-    data_writer.writerow(np.append(est_theta_vel, '\b'))
-    data_writer.writerow(np.append(est_alpha_1_vel, '\b'))
-    
-    data_writer.writerow(np.append(f1_story, '\b'))
-    data_writer.writerow(np.append(f2_story, '\b'))
-    
-    # if len(alignment_story) == 0:
-    #     data_writer.writerow(np.zeros(len(sim_time)))
-    # else:
-    #     data_writer.writerow(alignment_story)
+    if append_delimiter:
+        data_writer.writerow(np.append(sim_time, '\b'))
         
-    data_writer.writerows(np.concatenate((COM_pos, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis=1))
-    data_writer.writerows(np.concatenate((COM_vel, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis=1))
-    
-    data_writer.writerows(np.concatenate((goal_pos, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis=1))
-    data_writer.writerows(np.concatenate((goal_vel, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis=1))
-    
-    data_writer.writerow(np.append(goal_theta, '\b'))
-    data_writer.writerow(np.append(goal_w_b, '\b'))
-    
-    data_writer.writerow(np.append(goal_alpha_1, '\b'))
-    data_writer.writerow(np.append(goal_w_1, '\b'))
-    
-    data_writer.writerow(np.append(ground_force, '\b'))
-    
-    data_writer.writerows(np.concatenate((gps_meas, np.array(['\b', '\b']).reshape((-1, 1))), axis = 1))
-    data_writer.writerows(np.concatenate((gps_sim, np.array(['\b', '\b']).reshape((-1, 1))), axis = 1))
-    
-    data_writer.writerows(np.concatenate((vel_meas, np.array(['\b', '\b']).reshape((-1, 1))), axis = 1))
-    data_writer.writerows(np.concatenate((vel_sim, np.array(['\b', '\b']).reshape((-1, 1))), axis = 1))
-    
-    # data_writer.writerows(np.concatenate((gps_meas, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
-    # data_writer.writerows(np.concatenate((gps_sim, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
-    
-    # data_writer.writerow(np.append(damping_story, '\b'))
-    
-    data_writer.writerow(np.append(phase_story, '\b'))
-    
-    data_writer.writerows(np.concatenate((COM_acc, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
-    
-    data_writer.writerow(np.append(smoothing_story, '\b'))
-    
-    data_writer.writerow(np.append(phase_start_story, '\b'))
+        data_writer.writerow(np.append(sim_x1_acc, '\b'))
+        data_writer.writerow(np.append(sim_z1_acc, '\b'))
+        data_writer.writerow(np.append(sim_theta_acc, '\b'))
+        data_writer.writerow(np.append(sim_alpha_1_acc, '\b'))
+        
+        data_writer.writerow(np.append(est_x1_acc, '\b'))
+        data_writer.writerow(np.append(est_z1_acc, '\b'))
+        data_writer.writerow(np.append(est_theta_acc, '\b'))
+        data_writer.writerow(np.append(est_alpha_1_acc, '\b'))
+        
+        data_writer.writerows(np.concatenate((sim_meas, np.array(['\b', '\b', '\b', '\b', '\b', '\b']).reshape((-1, 1))), axis=1))
+        data_writer.writerows(np.concatenate((est_meas, np.array(['\b', '\b', '\b', '\b', '\b', '\b']).reshape((-1, 1))), axis=1))
+        
+        data_writer.writerow(np.append(sim_x1, '\b'))
+        data_writer.writerow(np.append(sim_z1, '\b'))
+        data_writer.writerow(np.append(sim_theta, '\b'))
+        data_writer.writerow(np.append(sim_alpha_1, '\b'))
+        
+        data_writer.writerow(np.append(est_x1, '\b'))
+        data_writer.writerow(np.append(est_z1, '\b'))
+        data_writer.writerow(np.append(est_theta, '\b'))
+        data_writer.writerow(np.append(est_alpha_1, '\b'))
+        
+        data_writer.writerow(np.append(sim_x1_vel, '\b'))
+        data_writer.writerow(np.append(sim_z1_vel, '\b'))
+        data_writer.writerow(np.append(sim_theta_vel, '\b'))
+        data_writer.writerow(np.append(sim_alpha_1_vel, '\b'))
+        
+        data_writer.writerow(np.append(est_x1_vel, '\b'))
+        data_writer.writerow(np.append(est_z1_vel, '\b'))
+        data_writer.writerow(np.append(est_theta_vel, '\b'))
+        data_writer.writerow(np.append(est_alpha_1_vel, '\b'))
+        
+        data_writer.writerow(np.append(f1_story, '\b'))
+        data_writer.writerow(np.append(f2_story, '\b'))
+        
+        # if len(alignment_story) == 0:
+        #     data_writer.writerow(np.zeros(len(sim_time)))
+        # else:
+        #     data_writer.writerow(alignment_story)
+            
+        data_writer.writerows(np.concatenate((COM_pos, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis=1))
+        data_writer.writerows(np.concatenate((COM_vel, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis=1))
+        
+        data_writer.writerows(np.concatenate((goal_pos, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis=1))
+        data_writer.writerows(np.concatenate((goal_vel, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis=1))
+        
+        data_writer.writerow(np.append(goal_theta, '\b'))
+        data_writer.writerow(np.append(goal_w_b, '\b'))
+        
+        data_writer.writerow(np.append(goal_alpha_1, '\b'))
+        data_writer.writerow(np.append(goal_w_1, '\b'))
+        
+        data_writer.writerow(np.append(ground_force, '\b'))
+        
+        data_writer.writerows(np.concatenate((gps_meas, np.array(['\b', '\b']).reshape((-1, 1))), axis = 1))
+        data_writer.writerows(np.concatenate((gps_sim, np.array(['\b', '\b']).reshape((-1, 1))), axis = 1))
+        
+        data_writer.writerows(np.concatenate((vel_meas, np.array(['\b', '\b']).reshape((-1, 1))), axis = 1))
+        data_writer.writerows(np.concatenate((vel_sim, np.array(['\b', '\b']).reshape((-1, 1))), axis = 1))
+        
+        # data_writer.writerows(np.concatenate((gps_meas, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+        # data_writer.writerows(np.concatenate((gps_sim, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+        
+        # data_writer.writerow(np.append(damping_story, '\b'))
+        
+        data_writer.writerow(np.append(phase_story, '\b'))
+        
+        data_writer.writerows(np.concatenate((COM_acc, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+        
+        data_writer.writerow(np.append(smoothing_story, '\b'))
+        
+        data_writer.writerow(np.append(phase_start_story, '\b'))
 
-    # data_writer.writerows(np.concatenate((f_cont_com, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
-    data_writer.writerows(np.concatenate((f_cont_com, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+        # data_writer.writerows(np.concatenate((f_cont_com, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+        data_writer.writerows(np.concatenate((f_cont_com, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
 
-    data_writer.writerow(np.append(M_cont_leg, '\b'))
+        data_writer.writerow(np.append(M_cont_leg, '\b'))
 
-    data_writer.writerow(np.append(M_cont_bar, '\b'))
+        data_writer.writerow(np.append(M_cont_bar, '\b'))
 
-    data_writer.writerows(np.concatenate((ground_force_vec, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+        data_writer.writerows(np.concatenate((ground_force_vec, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
 
-    data_writer.writerows(np.concatenate((sim_foot_vel, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+        data_writer.writerows(np.concatenate((sim_foot_vel, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
 
-    data_writer.writerow(np.append(ground_contact, '\b'))
+        data_writer.writerow(np.append(ground_contact, '\b'))
 
-    data_writer.writerow(np.append(IMU_update_instant, '\b'))
+        data_writer.writerow(np.append(IMU_update_instant, '\b'))
+        
+        data_writer.writerows(np.concatenate((ground_meas, np.array(['\b', '\b', '\b', '\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+
+        data_writer.writerows(np.concatenate((fly_meas, np.array(['\b', '\b', '\b', '\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+    else:
+        data_writer.writerow(sim_time)
     
-    data_writer.writerows(np.concatenate((ground_meas, np.array(['\b', '\b', '\b', '\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+        data_writer.writerow(sim_x1_acc)
+        data_writer.writerow(sim_z1_acc)
+        data_writer.writerow(sim_theta_acc)
+        data_writer.writerow(sim_alpha_1_acc)
+        
+        data_writer.writerow(est_x1_acc)
+        data_writer.writerow(est_z1_acc)
+        data_writer.writerow(est_theta_acc)
+        data_writer.writerow(est_alpha_1_acc)
+        
+        data_writer.writerows(sim_meas)
+        data_writer.writerows(est_meas)
+        
+        data_writer.writerow(sim_x1)
+        data_writer.writerow(sim_z1)
+        data_writer.writerow(sim_theta)
+        data_writer.writerow(sim_alpha_1)
+        
+        data_writer.writerow(est_x1)
+        data_writer.writerow(est_z1)
+        data_writer.writerow(est_theta)
+        data_writer.writerow(est_alpha_1)
+        
+        data_writer.writerow(sim_x1_vel)
+        data_writer.writerow(sim_z1_vel)
+        data_writer.writerow(sim_theta_vel)
+        data_writer.writerow(sim_alpha_1_vel)
+        
+        data_writer.writerow(est_x1_vel)
+        data_writer.writerow(est_z1_vel)
+        data_writer.writerow(est_theta_vel)
+        data_writer.writerow(est_alpha_1_vel)
+        
+        data_writer.writerow(f1_story)
+        data_writer.writerow(f2_story)
+        
+        # if len(alignment_story) == 0:
+        #     data_writer.writerow(np.zeros(len(sim_time)))
+        # else:
+        #     data_writer.writerow(alignment_story)
+            
+        data_writer.writerows(COM_pos)
+        data_writer.writerows(COM_vel)
+        
+        data_writer.writerows(goal_pos)
+        data_writer.writerows(goal_vel)
+        
+        data_writer.writerow(goal_theta)
+        data_writer.writerow(goal_w_b)
+        
+        data_writer.writerow(goal_alpha_1)
+        data_writer.writerow(goal_w_1)
+        
+        data_writer.writerow(ground_force)
+        
+        data_writer.writerows(gps_meas)
+        data_writer.writerows(gps_sim)
+        
+        data_writer.writerows(vel_meas)
+        data_writer.writerows(vel_sim)
+        
+        # data_writer.writerows(gps_meas)
+        # data_writer.writerows(gps_sim)
+        
+        # data_writer.writerow(damping_story)
+        
+        data_writer.writerow(phase_story)
+        
+        data_writer.writerows(COM_acc)
+        
+        data_writer.writerow(smoothing_story)
+        
+        data_writer.writerow(phase_start_story)
 
-    data_writer.writerows(np.concatenate((fly_meas, np.array(['\b', '\b', '\b', '\b', '\b', '\b']).reshape((-1, 1))), axis = 1))
+        # data_writer.writerows(f_cont_com)
+        data_writer.writerows(f_cont_com)
+
+        data_writer.writerow(M_cont_leg)
+
+        data_writer.writerow(M_cont_bar)
+
+        data_writer.writerows(ground_force_vec)
+
+        data_writer.writerows(sim_foot_vel)
+
+        data_writer.writerow(ground_contact)
+
+        data_writer.writerow(IMU_update_instant)
+        
+        data_writer.writerows(ground_meas)
+
+        data_writer.writerows(fly_meas)
+
 
 print ('data stored in file"', csv_name, '"')
 
+if render:
+    print ("saving recording")
+    height, width, _ = video_frames[0].shape
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # codec for mp4
+    video_title = "./sim_recording/parab_jump_"+str(experiment_scenario)+".mp4"
+    video = cv2.VideoWriter(video_title, fourcc, rend_freq, (width, height))
+
+    for frame in video_frames:
+        bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        # video.write(frame)
+        video.write(bgr_frame)
+
+    video.release()
 # print (f_cont_com.shape)
 # print (np.concatenate((f_cont_com, np.array(['\b', '\b', '\b']).reshape((-1, 1))), axis = 1).shape)

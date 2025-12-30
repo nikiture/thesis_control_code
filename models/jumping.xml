@@ -1,4 +1,9 @@
 <mujoco>
+
+
+    <visual>
+        <global offwidth = "1280" offheight = "720"/>
+    </visual>
     <compiler angle = "degree"/>
     <option>
         <flag gravity = "enable" contact = "enable"/>
